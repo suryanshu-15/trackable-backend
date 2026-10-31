@@ -1,0 +1,54 @@
+name: backend
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: trackable
+          POSTGRES_PASSWORD: trackable
+          POSTGRES_DB: trackable
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      SECRET_KEY: ci-only-not-a-real-secret-0123456789abcdef
+      DEBUG: 'False'
+      DB_HOST: localhost
+      DB_USER: trackable
+      DB_PASSWORD: trackable
+      DB_NAME: trackable
+      BUSINESS_TIMEZONE: Asia/Kolkata
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: python manage.py check --deploy --fail-level ERROR
+      - run: python manage.py makemigrations --check --dry-run
+      - run: python manage.py test
+      - run: python manage.py spectacular --file /tmp/schema.yml --fail-on-warn
+      # The committed schema drives the frontend's generated types; it must be current.
+      - run: diff -u schema.yml /tmp/schema.yml
+      # Migration + backup/restore smoke test on a migrated, demo-seeded database (spec test 17)
+      - run: python manage.py migrate --noinput
+      - run: python manage.py seed_demo --with-sample-flow --allow-non-debug
+      - run: python manage.py reconcile_inventory
+      - run: python manage.py run_alerts
+      - run: sudo apt-get install -y postgresql-client-16 || true
+      - run: ../scripts/backup_restore_check.sh
+        env:
+          DB_PASSWORD: trackable
+          PYTHON: python

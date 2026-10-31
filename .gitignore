@@ -1,0 +1,26 @@
+# Secrets
+.env
+.env.local
+*.env.local
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+backend/staticfiles/
+backend/mediafiles/
+
+# Node
+node_modules/
+.next/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Local backups
+backups/
+
+# The frontend is its own repository (github.com/suryanshu-15/trackable); clone it into ./frontend
+frontend/
