@@ -1,5 +1,9 @@
 # Trackable — Warehouse Material Traceability System
 
+> Project documents (`docs/` — decisions, runbook, functionality checklist, test guide — and the
+> requirements specification) are kept outside this repository; links to them below work only in a
+> local copy that has them.
+
 ## Quick Start (Development)
 
 ### Prerequisites

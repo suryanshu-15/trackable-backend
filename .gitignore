@@ -24,3 +24,7 @@ backups/
 
 # The frontend is its own repository (github.com/suryanshu-15/trackable); clone it into ./frontend
 frontend/
+
+# Documentation-only files (kept locally, not needed to build or run the application)
+docs/
+warehouse_material_traceability_requirements.md
