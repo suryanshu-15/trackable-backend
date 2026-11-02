@@ -239,15 +239,20 @@ class TransitionTests(ReceivingTestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.json()['error'], 'invalid_transition')
 
-    def test_cancel_requires_admin_and_reason(self):
+    def test_cancel_needs_a_reason_and_is_allowed_to_gate_and_admin_before_unloading(self):
         r = self.create_receipt()
-        self.assertEqual(self.post(r['id'], 'cancel', {'reason': 'x'}).status_code, 403)
-        self.assertEqual(self.post(r['id'], 'cancel', client=self.admin).status_code, 400)
-        self.assertEqual(self.post(r['id'], 'cancel', {'reason': 'Wrong truck'}, client=self.admin).status_code, 200)
+        self.assertEqual(self.post(r['id'], 'cancel').status_code, 400)  # no reason
+        self.assertEqual(self.post(r['id'], 'cancel', {'reason': 'Entered by mistake'}).status_code, 200)  # gate
+        r2 = self.create_receipt(invoice_number='INV-CANCEL-2')
+        self.assertEqual(self.post(r2['id'], 'cancel', {'reason': 'Wrong truck'}, client=self.admin).status_code, 200)
+        from apps.core.testing import client_for
+        receiving = client_for(self.fx.users['RECEIVING'])
+        r3 = self.create_receipt(invoice_number='INV-CANCEL-3')
+        self.assertEqual(self.post(r3['id'], 'cancel', {'reason': 'x'}, client=receiving).status_code, 403)
 
     def test_allowed_transitions_depend_on_role(self):
         r = self.create_receipt()
-        self.assertEqual(self.gate.get(f"{URL}{r['id']}/").json()['allowed_transitions'], ['register_at_gate'])
+        self.assertEqual(sorted(self.gate.get(f"{URL}{r['id']}/").json()['allowed_transitions']), ['cancel', 'register_at_gate'])
         admin_view = self.admin.get(f"{URL}{r['id']}/").json()['allowed_transitions']
         self.assertEqual(sorted(admin_view), ['cancel', 'register_at_gate'])
 

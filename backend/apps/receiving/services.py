@@ -244,7 +244,8 @@ RECEIPT_TRANSITIONS = {
     'start_putaway': (('ADMIN', 'RECEIVING', 'WAREHOUSE'), None),
     'mark_stored': (('ADMIN', 'RECEIVING', 'WAREHOUSE'), _require_putaway_complete),
     'close': (('ADMIN', 'MANAGER'), None),
-    'cancel': (('ADMIN',), None),
+    # The gate can cancel its own work before the truck is sent for unloading (the only states cancel allows).
+    'cancel': (('ADMIN', 'GATE'), None),
 }
 REASON_REQUIRED_TRANSITIONS = {'cancel', 'flag_exception'}
 

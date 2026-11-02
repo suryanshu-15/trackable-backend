@@ -47,6 +47,18 @@ DEFAULTS = {
     'issue.require_request': True,
     # Packages still waiting for put-away after this many hours raise an alert.
     'alerts.putaway_overdue_hours': 24,
+    # Who may add master data from the forms that use it ("+ New" next to a dropdown).
+    # Editing and deleting master data stay with administrators. Unlisted kinds: admin only.
+    'master.create_roles': {
+        'supplier': ['ADMIN', 'MANAGER', 'GATE'],
+        'material': ['ADMIN', 'MANAGER', 'GATE', 'RECEIVING'],
+        'unit': ['ADMIN', 'MANAGER'],
+        'location': ['ADMIN', 'MANAGER', 'WAREHOUSE'],
+        'factory': ['ADMIN', 'MANAGER'],
+        'department': ['ADMIN', 'MANAGER', 'WAREHOUSE', 'FACTORY'],
+        'test_definition': ['ADMIN', 'MANAGER', 'LAB_REVIEWER'],
+        'category': ['ADMIN', 'MANAGER'],
+    },
     # Retention (days) applied by `manage.py apply_retention`.
     'retention.audit_days': 365,
     'retention.document_days': 365,
@@ -57,7 +69,7 @@ DEFAULTS = {
 PUBLIC_KEYS = [
     'receiving.line_acceptance', 'package.unit_codes', 'package.type', 'lab.sample_scope',
     'lab.optional_failures_block_release', 'issue.whole_packages_only', 'issue.require_request',
-    'issue.fifo_override_policy', 'issue.override_roles', 'stock.near_expiry_days',
+    'issue.fifo_override_policy', 'issue.override_roles', 'stock.near_expiry_days', 'master.create_roles',
 ]
 
 
