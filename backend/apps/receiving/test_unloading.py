@@ -225,3 +225,26 @@ class UnidentifiedMaterialTests(UnloadingTestCase):
         self.assertEqual(pkgs[0].material, self.fx.material)
         line.refresh_from_db()
         self.assertIsNone(line.material)  # invoice record untouched
+
+
+class ExceptionClearsOnCorrectionTests(TestCase):
+    """A mistyped quantity flags an exception; re-verifying correctly returns the receipt to unloading."""
+
+    def setUp(self):
+        from apps.core.testing import Fixtures
+        self.fx = Fixtures()
+
+    def test_auto_resume_after_correction_but_not_after_manual_flag(self):
+        from apps.receiving import services
+        from apps.receiving.models import GoodsReceipt
+        receipt = self.fx.receipt_in_unloading()
+        line = receipt.invoice_lines.get()
+        self.fx.verify(line, received='0')  # e.g. the mouse wheel turned 200 into 0
+        self.assertEqual(GoodsReceipt.objects.get(pk=receipt.pk).status, 'EXCEPTION')
+        self.fx.verify(line, received='200')
+        self.assertEqual(GoodsReceipt.objects.get(pk=receipt.pk).status, 'UNLOADING_IN_PROGRESS')
+
+        other = self.fx.receipt_in_unloading(invoice_number='INV-MANUAL')
+        services.transition_receipt(other, 'flag_exception', self.fx.users['RECEIVING'], reason='Seal broken')
+        self.fx.verify(other.invoice_lines.get(), received='200')
+        self.assertEqual(GoodsReceipt.objects.get(pk=other.pk).status, 'EXCEPTION')  # a person flagged it: stays

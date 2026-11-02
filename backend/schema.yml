@@ -3485,8 +3485,8 @@ paths:
   /api/v1/master/departments/:
     get:
       operationId: master_departments_list
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: query
         name: factory
@@ -3533,8 +3533,8 @@ paths:
           description: ''
     post:
       operationId: master_departments_create
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       tags:
       - master
       requestBody:
@@ -3561,8 +3561,8 @@ paths:
   /api/v1/master/departments/{id}/:
     get:
       operationId: master_departments_retrieve
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -3583,8 +3583,8 @@ paths:
           description: ''
     put:
       operationId: master_departments_update
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -3617,8 +3617,8 @@ paths:
           description: ''
     patch:
       operationId: master_departments_partial_update
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -3650,8 +3650,8 @@ paths:
           description: ''
     delete:
       operationId: master_departments_destroy
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -3669,8 +3669,8 @@ paths:
   /api/v1/master/factories/:
     get:
       operationId: master_factories_list
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: query
         name: is_active
@@ -3713,8 +3713,8 @@ paths:
           description: ''
     post:
       operationId: master_factories_create
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       tags:
       - master
       requestBody:
@@ -3741,8 +3741,8 @@ paths:
   /api/v1/master/factories/{id}/:
     get:
       operationId: master_factories_retrieve
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -3763,8 +3763,8 @@ paths:
           description: ''
     put:
       operationId: master_factories_update
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -3797,8 +3797,8 @@ paths:
           description: ''
     patch:
       operationId: master_factories_partial_update
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -3830,8 +3830,8 @@ paths:
           description: ''
     delete:
       operationId: master_factories_destroy
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -3849,8 +3849,8 @@ paths:
   /api/v1/master/locations/:
     get:
       operationId: master_locations_list
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: query
         name: is_active
@@ -3921,8 +3921,8 @@ paths:
           description: ''
     post:
       operationId: master_locations_create
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       tags:
       - master
       requestBody:
@@ -3949,8 +3949,8 @@ paths:
   /api/v1/master/locations/{id}/:
     get:
       operationId: master_locations_retrieve
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -3971,8 +3971,8 @@ paths:
           description: ''
     put:
       operationId: master_locations_update
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4005,8 +4005,8 @@ paths:
           description: ''
     patch:
       operationId: master_locations_partial_update
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4038,8 +4038,8 @@ paths:
           description: ''
     delete:
       operationId: master_locations_destroy
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4057,8 +4057,8 @@ paths:
   /api/v1/master/material-categories/:
     get:
       operationId: master_material_categories_list
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - name: ordering
         required: false
@@ -4097,8 +4097,8 @@ paths:
           description: ''
     post:
       operationId: master_material_categories_create
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       tags:
       - master
       requestBody:
@@ -4125,8 +4125,8 @@ paths:
   /api/v1/master/material-categories/{id}/:
     get:
       operationId: master_material_categories_retrieve
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4147,8 +4147,8 @@ paths:
           description: ''
     put:
       operationId: master_material_categories_update
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4181,8 +4181,8 @@ paths:
           description: ''
     patch:
       operationId: master_material_categories_partial_update
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4214,8 +4214,8 @@ paths:
           description: ''
     delete:
       operationId: master_material_categories_destroy
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4233,8 +4233,8 @@ paths:
   /api/v1/master/materials/:
     get:
       operationId: master_materials_list
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: query
         name: category
@@ -4285,8 +4285,8 @@ paths:
           description: ''
     post:
       operationId: master_materials_create
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       tags:
       - master
       requestBody:
@@ -4313,8 +4313,8 @@ paths:
   /api/v1/master/materials/{id}/:
     get:
       operationId: master_materials_retrieve
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4335,8 +4335,8 @@ paths:
           description: ''
     put:
       operationId: master_materials_update
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4369,8 +4369,8 @@ paths:
           description: ''
     patch:
       operationId: master_materials_partial_update
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4402,8 +4402,8 @@ paths:
           description: ''
     delete:
       operationId: master_materials_destroy
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4421,8 +4421,8 @@ paths:
   /api/v1/master/suppliers/:
     get:
       operationId: master_suppliers_list
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: query
         name: is_active
@@ -4465,8 +4465,8 @@ paths:
           description: ''
     post:
       operationId: master_suppliers_create
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       tags:
       - master
       requestBody:
@@ -4493,8 +4493,8 @@ paths:
   /api/v1/master/suppliers/{id}/:
     get:
       operationId: master_suppliers_retrieve
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4515,8 +4515,8 @@ paths:
           description: ''
     put:
       operationId: master_suppliers_update
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4549,8 +4549,8 @@ paths:
           description: ''
     patch:
       operationId: master_suppliers_partial_update
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4582,8 +4582,8 @@ paths:
           description: ''
     delete:
       operationId: master_suppliers_destroy
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4601,8 +4601,8 @@ paths:
   /api/v1/master/test-definitions/:
     get:
       operationId: master_test_definitions_list
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: query
         name: is_active
@@ -4661,8 +4661,8 @@ paths:
           description: ''
     post:
       operationId: master_test_definitions_create
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       tags:
       - master
       requestBody:
@@ -4689,8 +4689,8 @@ paths:
   /api/v1/master/test-definitions/{id}/:
     get:
       operationId: master_test_definitions_retrieve
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4711,8 +4711,8 @@ paths:
           description: ''
     put:
       operationId: master_test_definitions_update
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4745,8 +4745,8 @@ paths:
           description: ''
     patch:
       operationId: master_test_definitions_partial_update
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4778,8 +4778,8 @@ paths:
           description: ''
     delete:
       operationId: master_test_definitions_destroy
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4797,6 +4797,8 @@ paths:
   /api/v1/master/unit-conversions/:
     get:
       operationId: master_unit_conversions_list
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - name: ordering
         required: false
@@ -4835,6 +4837,8 @@ paths:
           description: ''
     post:
       operationId: master_unit_conversions_create
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       tags:
       - master
       requestBody:
@@ -4861,6 +4865,8 @@ paths:
   /api/v1/master/unit-conversions/{id}/:
     get:
       operationId: master_unit_conversions_retrieve
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4881,6 +4887,8 @@ paths:
           description: ''
     put:
       operationId: master_unit_conversions_update
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4913,6 +4921,8 @@ paths:
           description: ''
     patch:
       operationId: master_unit_conversions_partial_update
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4944,6 +4954,8 @@ paths:
           description: ''
     delete:
       operationId: master_unit_conversions_destroy
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -4961,8 +4973,8 @@ paths:
   /api/v1/master/units/:
     get:
       operationId: master_units_list
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: query
         name: is_active
@@ -5023,8 +5035,8 @@ paths:
           description: ''
     post:
       operationId: master_units_create
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       tags:
       - master
       requestBody:
@@ -5051,8 +5063,8 @@ paths:
   /api/v1/master/units/{id}/:
     get:
       operationId: master_units_retrieve
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -5073,8 +5085,8 @@ paths:
           description: ''
     put:
       operationId: master_units_update
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -5107,8 +5119,8 @@ paths:
           description: ''
     patch:
       operationId: master_units_partial_update
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -5140,8 +5152,8 @@ paths:
           description: ''
     delete:
       operationId: master_units_destroy
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -5159,8 +5171,8 @@ paths:
   /api/v1/master/warehouses/:
     get:
       operationId: master_warehouses_list
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: query
         name: is_active
@@ -5203,8 +5215,8 @@ paths:
           description: ''
     post:
       operationId: master_warehouses_create
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       tags:
       - master
       requestBody:
@@ -5231,8 +5243,8 @@ paths:
   /api/v1/master/warehouses/{id}/:
     get:
       operationId: master_warehouses_retrieve
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -5253,8 +5265,8 @@ paths:
           description: ''
     put:
       operationId: master_warehouses_update
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -5287,8 +5299,8 @@ paths:
           description: ''
     patch:
       operationId: master_warehouses_partial_update
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -5320,8 +5332,8 @@ paths:
           description: ''
     delete:
       operationId: master_warehouses_destroy
-      description: Anyone signed in reads; permitted roles add; only administrators
-        edit or delete. Additions are audited.
+      description: Anyone signed in reads; permitted roles add; maintainers edit or
+        delete. All changes are audited.
       parameters:
       - in: path
         name: id
@@ -9147,6 +9159,12 @@ components:
     MaterialRequest:
       type: object
       properties:
+        test_ids:
+          type: array
+          items:
+            type: integer
+            writeOnly: true
+          writeOnly: true
         code:
           type: string
           minLength: 1
@@ -10766,6 +10784,12 @@ components:
     PatchedMaterialRequest:
       type: object
       properties:
+        test_ids:
+          type: array
+          items:
+            type: integer
+            writeOnly: true
+          writeOnly: true
         code:
           type: string
           minLength: 1

@@ -47,8 +47,10 @@ DEFAULTS = {
     'issue.require_request': True,
     # Packages still waiting for put-away after this many hours raise an alert.
     'alerts.putaway_overdue_hours': 24,
-    # Who may add master data from the forms that use it ("+ New" next to a dropdown).
-    # Editing and deleting master data stay with administrators. Unlisted kinds: admin only.
+    # Who maintains master data: add, edit, activate / deactivate and delete unused records
+    # (the Master data screens). These roles can also add every kind from forms.
+    'master.manage_roles': ['ADMIN', 'MANAGER'],
+    # Who else may add master data from the forms that use it ("+ New" next to a dropdown).
     'master.create_roles': {
         'supplier': ['ADMIN', 'MANAGER', 'GATE'],
         'material': ['ADMIN', 'MANAGER', 'GATE', 'RECEIVING'],
@@ -70,6 +72,7 @@ PUBLIC_KEYS = [
     'receiving.line_acceptance', 'package.unit_codes', 'package.type', 'lab.sample_scope',
     'lab.optional_failures_block_release', 'issue.whole_packages_only', 'issue.require_request',
     'issue.fifo_override_policy', 'issue.override_roles', 'stock.near_expiry_days', 'master.create_roles',
+    'master.manage_roles',
 ]
 
 

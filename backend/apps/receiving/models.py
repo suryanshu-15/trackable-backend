@@ -172,6 +172,10 @@ class GoodsReceipt(UUIDModel, AuditedModel):
     def flag_exception(self):
         pass
 
+    @transition(field=status, source=ReceiptStatus.EXCEPTION, target=ReceiptStatus.UNLOADING_IN_PROGRESS)
+    def resume_unloading(self):
+        """System-only: every discrepancy was cleared by re-verification."""
+
     @transition(
         field=status,
         source=[ReceiptStatus.VERIFICATION_PENDING, ReceiptStatus.EXCEPTION],

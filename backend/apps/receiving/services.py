@@ -530,6 +530,19 @@ def record_verification(line, data, user, *, request=None):
         request=request,
     )
 
+    still_discrepant = ReceiptLineVerification.objects.filter(
+        invoice_line__receipt=receipt, verification_status=VerificationStatus.DISCREPANT).exists()
+    if receipt.status == ReceiptStatus.EXCEPTION and not still_discrepant and not receipt_has_flagged_exception_reason(receipt):
+        # A correction cleared the last discrepancy (e.g. a mistyped quantity): back to normal unloading.
+        receipt.resume_unloading()
+        receipt.updated_by = user
+        receipt.save()
+        record_audit(
+            user, AuditEvent.ACTION_TRANSITION, 'GoodsReceipt', receipt.id,
+            reason=f'Automatic: line {line.line_number} re-verified; no discrepancies remain',
+            before={'status': ReceiptStatus.EXCEPTION}, after={'status': receipt.status},
+            extra={'transition': 'resume_unloading', 'system': True}, request=request,
+        )
     if v.verification_status == VerificationStatus.DISCREPANT and receipt.status == ReceiptStatus.UNLOADING_IN_PROGRESS:
         receipt.flag_exception()
         receipt.updated_by = user
@@ -541,6 +554,12 @@ def record_verification(line, data, user, *, request=None):
             extra={'transition': 'flag_exception', 'system': True}, request=request,
         )
     return v
+
+
+def receipt_has_flagged_exception_reason(receipt):
+    """A person flagged the exception by hand (with a reason); only discrepancy-driven exceptions auto-clear."""
+    return AuditEvent.objects.filter(entity_type='GoodsReceipt', entity_id=str(receipt.id), action=AuditEvent.ACTION_TRANSITION,
+                                     extra__transition='flag_exception').exclude(extra__has_key='system').exists()
 
 
 DISCREPANCY_REVIEWER_ROLES = ('ADMIN', 'MANAGER')
