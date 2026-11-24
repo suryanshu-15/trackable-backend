@@ -405,6 +405,12 @@ class MaterialRequest(UUIDModel, AuditedModel):
     required_by = models.DateField(null=True, blank=True)
     production_order = models.CharField(max_length=200, blank=True, db_index=True)
     cost_centre = models.CharField(max_length=100, blank=True)
+    # Client order the material is for: the product / grade the factory will make (e.g. a special
+    # cement grade or an iron–aluminium–copper mix) and how much of it.
+    client_name = models.CharField(max_length=200, blank=True, db_index=True)
+    product_name = models.CharField('product / grade', max_length=200, blank=True, db_index=True)
+    product_quantity = models.DecimalField(max_digits=15, decimal_places=4, null=True, blank=True)
+    product_unit = models.ForeignKey(UnitOfMeasure, null=True, blank=True, on_delete=models.PROTECT, related_name='+')
     notes = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=RequestStatus.choices, default=RequestStatus.SUBMITTED, db_index=True)
     closed_reason = models.TextField(blank=True)
@@ -429,6 +435,8 @@ class MaterialRequestLine(UUIDModel, TimeStampedModel):
     unit = models.ForeignKey(UnitOfMeasure, on_delete=models.PROTECT, related_name='+')
     # Cached running total; reconciles with SUM(MaterialIssueLine.issued_quantity)
     issued_quantity = models.DecimalField(max_digits=15, decimal_places=4, default=Decimal('0'))
+    # Share of this material in the product's composition (percent), when the request is a mixture
+    percentage = models.DecimalField(max_digits=7, decimal_places=3, null=True, blank=True)
     notes = models.CharField(max_length=500, blank=True)
 
     class Meta:

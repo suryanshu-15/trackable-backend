@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from django.urls import reverse
 from rest_framework import serializers
+from drf_spectacular.utils import extend_schema_field
 
 from apps.inventory.models import Package
 from apps.master.models import LabTestDefinition, Material, UnitOfMeasure
@@ -104,21 +105,53 @@ class LabSampleAttachmentSerializer(serializers.ModelSerializer):
         return reverse('lab-attachment-download', kwargs={'pk': obj.pk})
 
 
+class SampleBagSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    package_id = serializers.CharField()
+    quantity = serializers.CharField()
+    location = serializers.CharField(allow_null=True)
+
+
+class SampleResultSerializer(serializers.Serializer):
+    verdict = serializers.CharField()
+    remarks = serializers.CharField()
+    decided_at = serializers.DateTimeField()
+
+
 class LabSampleListSerializer(serializers.ModelSerializer):
     material_code = serializers.CharField(source='material.code', read_only=True)
     material_name = serializers.CharField(source='material.name', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     package_count = serializers.IntegerField(read_only=True)
     is_overdue = serializers.SerializerMethodField()
+    bags = serializers.SerializerMethodField()
+    result = serializers.SerializerMethodField()
 
     class Meta:
         model = LabSample
         fields = [
             'id', 'sample_id', 'material', 'material_code', 'material_name', 'batch_number',
             'status', 'status_display', 'sampled_at', 'laboratory_name', 'package_count',
-            'required_by', 'is_overdue', 'created_at',
+            'required_by', 'is_overdue', 'created_at', 'bags', 'result',
         ]
         read_only_fields = fields
+
+    @extend_schema_field(SampleBagSerializer(many=True))
+    def get_bags(self, obj):
+        """The bag(s) this sample was taken from."""
+        return [{'id': str(sp.package_id), 'package_id': sp.package.package_id, 'quantity': str(sp.package.current_quantity),
+                 'location': sp.package.current_location.code if sp.package.current_location else None}
+                for sp in obj.sample_packages.all()]
+
+    @extend_schema_field(SampleResultSerializer(allow_null=True))
+    def get_result(self, obj):
+        """Latest decision: PASS (released) or FAIL (rejected), with the remarks."""
+        decisions = sorted(obj.dispositions.all(), key=lambda d: d.decided_at)
+        if not decisions:
+            return None
+        d = decisions[-1]
+        verdict = {'RELEASED': 'PASS', 'REJECTED': 'FAIL'}.get(d.decision, d.decision)
+        return {'verdict': verdict, 'remarks': d.reason, 'decided_at': d.decided_at}
 
     def get_is_overdue(self, obj) -> bool:
         from django.utils import timezone
@@ -263,3 +296,15 @@ class HoldCreateSerializer(serializers.Serializer):
     material = serializers.PrimaryKeyRelatedField(queryset=Material.objects.all(), required=False)
     batch_number = serializers.CharField(max_length=200, required=False, allow_blank=True, default='')
     reason = serializers.CharField()
+
+
+class TakeSamplesSerializer(serializers.Serializer):
+    packages = serializers.PrimaryKeyRelatedField(queryset=Package.objects.all(), many=True)
+    notes = serializers.CharField(required=False, allow_blank=True, default='')
+
+
+class PassFailSerializer(serializers.Serializer):
+    result = serializers.ChoiceField(choices=['PASS', 'FAIL'])
+    remarks = serializers.CharField(required=False, allow_blank=True, default='')
+    new_expiry_date = serializers.DateField(required=False, allow_null=True)
+    new_retest_date = serializers.DateField(required=False, allow_null=True)

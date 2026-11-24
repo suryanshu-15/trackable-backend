@@ -77,9 +77,9 @@ class ReportContentTests(DemoDataTestCase):
         self.assertEqual(avail['count'], Package.objects.available().count())
 
     def test_lab_and_issue_registers(self):
-        lab = self.as_('LAB_REVIEWER').get(f'{R}/lab-register/').json()
+        lab = self.as_('LAB').get(f'{R}/lab-register/').json()
         self.assertEqual(lab['count'], 12)  # three tests on each of the four DEMO-LOT-A1 bags (one sample per bag)
-        decisions = self.as_('LAB_REVIEWER').get(f'{R}/qc-decisions/').json()
+        decisions = self.as_('LAB').get(f'{R}/qc-decisions/').json()
         self.assertEqual(decisions['results'][0][decisions['columns'].index('Decision')], 'Released / Approved')
         issues = self.as_('WAREHOUSE').get(f'{R}/issue-register/').json()
         self.assertEqual(issues['count'], MaterialIssueLine.objects.count())
@@ -205,7 +205,7 @@ class AlertTests(DemoDataTestCase):
         self.run_alerts()
         wh = User.objects.get(username='demo_warehouse')
         self.assertTrue(Notification.objects.filter(recipient=wh, title__startswith=f'{pkg.package_id} expiring').exists())
-        self.assertTrue(Notification.objects.filter(recipient__username='demo_lab_tech', title__contains='overdue').exists())
+        self.assertTrue(Notification.objects.filter(recipient__username='demo_lab', title__contains='overdue').exists())
         self.assertTrue(Notification.objects.filter(recipient__username='demo_admin', level='CRITICAL').exists())
         before = Notification.objects.count()
         self.assertIn('0 notification(s) sent', self.run_alerts())

@@ -208,17 +208,34 @@ def create_packages(line, specs, user, *, request=None):
 # Labels & scanning
 # ---------------------------------------------------------------------------
 
-def qr_payload(pkg):
-    """Opaque, stable content for the QR code. Never includes mutable status."""
-    return f'{settings.FRONTEND_BASE_URL}/scan/{pkg.scan_token}'
+def frontend_origin(request):
+    """
+    Public address of the web app as the browser sees it (scheme://host[:port]), sent by the
+    frontend in X-Frontend-Origin. Anything that is not a plain http(s) origin is ignored.
+    """
+    from urllib.parse import urlsplit
+    raw = (request.headers.get('X-Frontend-Origin') or '').strip() if request is not None else ''
+    parts = urlsplit(raw)
+    if parts.scheme in ('http', 'https') and parts.netloc and not parts.path.strip('/') and '@' not in parts.netloc:
+        return f'{parts.scheme}://{parts.netloc}'
+    return None
 
 
-def label_data(pkg):
+def qr_payload(pkg, base=None):
+    """
+    Opaque, stable content for the QR code: <app address>/scan/<token>. Never includes mutable status.
+    FRONTEND_BASE_URL wins when set; otherwise the address the app was opened at.
+    """
+    origin = settings.FRONTEND_BASE_URL or base or 'http://localhost:3000'
+    return f'{origin}/scan/{pkg.scan_token}'
+
+
+def label_data(pkg, base=None):
     line = pkg.invoice_line
     return {
         'package_id': pkg.package_id,
         'package_type': get_config('package.type') or '',
-        'qr_payload': qr_payload(pkg),
+        'qr_payload': qr_payload(pkg, base),
         'barcode_value': pkg.package_id,
         'material_code': pkg.material.code,
         'material_name': pkg.material.name,

@@ -121,6 +121,14 @@ class FifoFefoTests(IssueTestCase):
         Package.objects.filter(pk=self.mid.pk).update(expiry_date=timezone.localdate() - timedelta(days=1))
         self.assertEqual([x['package_id'] for x in self.suggest('100')['suggestions']], [self.new.package_id])
 
+    def test_leftover_bags_are_suggested_before_full_bags_of_the_same_age(self):
+        from apps.inventory.services import split_package
+        leftover = split_package(Package.objects.get(pk=self.old.pk), [D('30')], self.fx.users['WAREHOUSE'],
+                                 reason='Part used')[1][0]
+        Package.objects.filter(pk=leftover.pk).update(status='STORED')  # labelled and put back on the shelf
+        picks = [(x['package_id'], D(x['quantity'])) for x in self.suggest('50')['suggestions']]
+        self.assertEqual(picks, [(leftover.package_id, D('30')), (self.old.package_id, D('20'))])
+
     def test_whole_package_materials(self):
         self.mat.allow_partial_issue = False
         self.mat.save()
@@ -392,3 +400,40 @@ class AdjustmentTests(IssueTestCase):
         self.wh.post(f"{API}/requests/{req['id']}/allocate/", format='json')
         adj = self.adjust('DECREASE', '10').json()
         self.assertEqual(self.mgr.post(f"{API}/adjustments/{adj['id']}/approve/", format='json').status_code, 400)
+
+
+class ClientOrderCompositionTests(IssueTestCase):
+    """2026-11-23: a request is for a client order — a product / grade made from a mixture of materials."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.master.models import Material
+        self.alu = Material.objects.create(code='ALU', name='Aluminium', default_unit=self.fx.kg, qc_required=False,
+                                           requires_expiry=False, requires_retest=False, allow_partial_issue=True)
+
+    def mixture(self, shares, total='1000', **extra):
+        payload = {'factory': self.factory.pk, 'client_name': 'Acme Castings', 'product_name': 'Alloy grade AL-7',
+                   'product_quantity': total, 'product_unit': self.fx.kg.pk,
+                   'lines': [{'material': m.pk, 'percentage': p} for m, p in shares], **extra}
+        return self.fac.post(f'{API}/requests/', payload, format='json')
+
+    def test_shares_become_quantities_of_the_product(self):
+        resp = self.mixture([(self.mat, '70'), (self.alu, '30')])
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        self.assertEqual((body['client_name'], body['product_name'], body['product_quantity'], body['product_unit_symbol']),
+                         ('Acme Castings', 'Alloy grade AL-7', '1000.0000', 'kg'))
+        self.assertEqual([(l['material_code'], l['percentage'], l['requested_quantity'], l['unit_symbol']) for l in body['lines']],
+                         [('MAT-2', '70.000', '700.0000', 'kg'), ('ALU', '30.000', '300.0000', 'kg')])
+        self.assertEqual(self.wh.get(f'{API}/requests/', {'search': 'AL-7'}).json()['count'], 1)
+
+    def test_shares_must_add_up_to_100_and_need_the_product_quantity(self):
+        self.assertEqual(self.mixture([(self.mat, '70'), (self.alu, '20')]).json()['error'], 'composition_not_100')
+        self.assertEqual(self.mixture([(self.mat, '70'), (self.alu, '30')], total=None).status_code, 400)
+        mixed = {'factory': self.factory.pk, 'product_quantity': '10', 'product_unit': self.fx.kg.pk,
+                 'lines': [{'material': self.mat.pk, 'percentage': '50'}, {'material': self.alu.pk, 'quantity': '5', 'unit': self.fx.kg.pk}]}
+        self.assertEqual(self.fac.post(f'{API}/requests/', mixed, format='json').status_code, 400)
+
+    def test_availability_shows_only_lab_passed_unreserved_stock(self):
+        rows = self.fac.get(f'{API}/requests/availability/', {'materials': f'{self.mat.pk},{self.alu.pk}'}).json()
+        self.assertEqual([(r['material'], r['available_quantity'], r['unit']) for r in rows], [(self.mat.pk, '300.0000', 'kg')])

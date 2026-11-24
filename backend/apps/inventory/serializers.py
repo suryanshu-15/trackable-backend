@@ -74,6 +74,8 @@ class PackageSerializer(serializers.ModelSerializer):
     receipt = serializers.UUIDField(source='invoice_line.receipt_id', read_only=True)
     receipt_number = serializers.CharField(source='invoice_line.receipt.receipt_number', read_only=True)
     invoice_line_number = serializers.IntegerField(source='invoice_line.line_number', read_only=True)
+    # Storage location written on the gate register for this material (suggested at put-away)
+    planned_location = serializers.IntegerField(source='invoice_line.storage_location_id', read_only=True, default=None)
     parent_package_code = serializers.CharField(source='parent_package.package_id', read_only=True, default=None)
     child_packages = serializers.SerializerMethodField()
     is_available = serializers.BooleanField(read_only=True)
@@ -88,7 +90,7 @@ class PackageSerializer(serializers.ModelSerializer):
         model = Package
         fields = [
             'id', 'package_id',
-            'receipt', 'receipt_number', 'invoice_line', 'invoice_line_number',
+            'receipt', 'receipt_number', 'invoice_line', 'invoice_line_number', 'planned_location',
             'parent_package', 'parent_package_code', 'child_packages', 'split_reason',
             'material', 'material_code', 'material_name', 'supplier', 'supplier_name',
             'original_quantity', 'current_quantity', 'unit', 'unit_symbol',
@@ -138,7 +140,7 @@ class PackageSerializer(serializers.ModelSerializer):
                 and user.has_role('ADMIN', 'WAREHOUSE'):
             actions.append('split')
         if obj.status in (PackageStatus.AWAITING_PUTAWAY, PackageStatus.STORED) and user.has_role(
-                'ADMIN', 'WAREHOUSE', 'LAB_REVIEWER') \
+                'ADMIN', 'WAREHOUSE', 'LAB') \
                 and not [r for r in obj.blocking_reasons() if not r.startswith('status is')]:
             actions.append('print_release_tag')
         return actions
@@ -293,7 +295,7 @@ class MaterialRequestLineSerializer(serializers.ModelSerializer):
     class Meta:
         model = MaterialRequestLine
         fields = ['id', 'material', 'material_code', 'material_name', 'requested_quantity', 'issued_quantity',
-                  'remaining_quantity', 'unit', 'unit_symbol', 'notes', 'reservations']
+                  'remaining_quantity', 'unit', 'unit_symbol', 'percentage', 'notes', 'reservations']
         read_only_fields = fields
 
     @extend_schema_field(ReservationSerializer(many=True))
@@ -309,11 +311,13 @@ class MaterialRequestSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     lines = MaterialRequestLineSerializer(many=True, read_only=True)
     issue_numbers = serializers.SerializerMethodField()
+    product_unit_symbol = serializers.CharField(source='product_unit.symbol', read_only=True, default=None)
 
     class Meta:
         model = MaterialRequest
         fields = ['id', 'request_number', 'factory', 'factory_name', 'department', 'department_name',
-                  'requested_by', 'requested_by_name', 'required_by', 'production_order', 'cost_centre', 'notes',
+                  'requested_by', 'requested_by_name', 'required_by', 'production_order', 'cost_centre',
+                  'client_name', 'product_name', 'product_quantity', 'product_unit', 'product_unit_symbol', 'notes',
                   'status', 'status_display', 'closed_reason', 'lines', 'issue_numbers', 'created_at', 'updated_at']
         read_only_fields = fields
 
@@ -323,8 +327,16 @@ class MaterialRequestSerializer(serializers.ModelSerializer):
 
 class RequestLineInputSerializer(serializers.Serializer):
     material = serializers.PrimaryKeyRelatedField(queryset=Material.objects.all())
-    quantity = serializers.DecimalField(max_digits=15, decimal_places=4, min_value=Decimal('0.0001'))
-    unit = serializers.PrimaryKeyRelatedField(queryset=UnitOfMeasure.objects.all())
+    # For a mixture the quantity is worked out from the percentage, so it may be left out.
+    quantity = serializers.DecimalField(max_digits=15, decimal_places=4, min_value=Decimal('0.0001'), required=False)
+    unit = serializers.PrimaryKeyRelatedField(queryset=UnitOfMeasure.objects.all(), required=False)
+    percentage = serializers.DecimalField(max_digits=7, decimal_places=3, min_value=Decimal('0.001'),
+                                          max_value=Decimal('100'), required=False, allow_null=True)
+
+    def validate(self, attrs):
+        if attrs.get('percentage') is None and (attrs.get('quantity') is None or attrs.get('unit') is None):
+            raise serializers.ValidationError('Give the quantity and unit, or the percentage in the mixture.')
+        return attrs
     notes = serializers.CharField(max_length=500, required=False, allow_blank=True, default='')
 
 
@@ -334,6 +346,11 @@ class MaterialRequestInputSerializer(serializers.Serializer):
     required_by = serializers.DateField(required=False, allow_null=True)
     production_order = serializers.CharField(max_length=200, required=False, allow_blank=True, default='')
     cost_centre = serializers.CharField(max_length=100, required=False, allow_blank=True, default='')
+    client_name = serializers.CharField(max_length=200, required=False, allow_blank=True, default='')
+    product_name = serializers.CharField(max_length=200, required=False, allow_blank=True, default='')
+    product_quantity = serializers.DecimalField(max_digits=15, decimal_places=4, min_value=Decimal('0.0001'),
+                                                required=False, allow_null=True)
+    product_unit = serializers.PrimaryKeyRelatedField(queryset=UnitOfMeasure.objects.all(), required=False, allow_null=True)
     notes = serializers.CharField(required=False, allow_blank=True, default='')
     lines = RequestLineInputSerializer(many=True, min_length=1)
 

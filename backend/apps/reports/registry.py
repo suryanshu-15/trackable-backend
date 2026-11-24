@@ -20,7 +20,7 @@ from apps.laboratory.models import LabTestResult, QualityDisposition
 from apps.master.models import Supplier
 from apps.receiving.models import GoodsReceipt, InvoiceLine, VerificationStatus
 
-ALL_OPERATIONAL = ('ADMIN', 'MANAGER', 'AUDITOR', 'WAREHOUSE', 'GATE', 'RECEIVING', 'LAB_TECH', 'LAB_REVIEWER')
+ALL_OPERATIONAL = ('ADMIN', 'MANAGER', 'AUDITOR', 'WAREHOUSE', 'GATE', 'RECEIVING', 'LAB')
 OVERSIGHT = ('ADMIN', 'MANAGER', 'AUDITOR')
 
 
@@ -247,7 +247,7 @@ def _value(r):
 
 LAB = Report(
     'lab-register', 'Laboratory test register', 'Every test result with limits, outcome and analyst.',
-    ('ADMIN', 'MANAGER', 'AUDITOR', 'LAB_TECH', 'LAB_REVIEWER', 'WAREHOUSE'),
+    ('ADMIN', 'MANAGER', 'AUDITOR', 'LAB', 'WAREHOUSE'),
     [('Sample', lambda r: r.test_run.sample.sample_id), ('Material', lambda r: r.test_run.sample.material.code),
      ('Lot', lambda r: r.test_run.sample.batch_number), ('Run', lambda r: r.test_run.run_number),
      ('Test', lambda r: r.test_definition.code), ('Result', _value),
@@ -269,7 +269,7 @@ def _decisions(params):
 
 DECISIONS = Report(
     'qc-decisions', 'QC decisions (pass / fail history)', 'Every quality disposition with the packages it affected.',
-    ('ADMIN', 'MANAGER', 'AUDITOR', 'LAB_TECH', 'LAB_REVIEWER', 'WAREHOUSE'),
+    ('ADMIN', 'MANAGER', 'AUDITOR', 'LAB', 'WAREHOUSE'),
     [('Sample', lambda d: d.sample.sample_id), ('Material', lambda d: d.sample.material.code),
      ('Lot', lambda d: d.sample.batch_number), ('Run', lambda d: d.test_run.run_number if d.test_run_id else ''),
      ('Decision', lambda d: d.get_decision_display()), ('Decided by', lambda d: _user(d.decided_by)),

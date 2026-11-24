@@ -13,6 +13,10 @@ DEFAULTS = {
     # Allowed % difference between gate net weight and sum of declared line weights
     # before a weight discrepancy alert is raised.
     'receipt.weight_tolerance_percent': '0.5',
+    # The weighbridge is at receiving: the loaded truck is weighed before unloading starts and
+    # the empty truck before unloading is finished; the weight check runs after the empty weighing.
+    'receiving.weigh_loaded_before_unloading': True,
+    'receiving.weigh_empty_before_finishing': True,
     # The user who recorded a discrepant verification may not also accept it.
     'receiving.discrepancy_acceptance_separation': True,
     # WHOLE: an invoice line is either accepted in full (everything received) or rejected
@@ -27,8 +31,9 @@ DEFAULTS = {
     'stock.ageing_buckets': [30, 60, 90],
     # Window for near-expiry / retest-due alerts.
     'stock.near_expiry_days': 30,
-    # Whoever entered or submitted a run's results may not record its disposition.
-    'lab.separation_of_duties': True,
+    # Whoever entered or submitted a run's results may not record its disposition. Off since
+    # 2026-11-23: one Lab role takes the sample, tests it and records pass / fail.
+    'lab.separation_of_duties': False,
     # SINGLE: one sample per package (bag); its result applies to that bag only (business rule).
     # LOT: a sample may cover several packages of one material and one batch/lot
     # (packages without a batch must come from the same invoice line).
@@ -58,7 +63,7 @@ DEFAULTS = {
         'location': ['ADMIN', 'MANAGER', 'WAREHOUSE'],
         'factory': ['ADMIN', 'MANAGER'],
         'department': ['ADMIN', 'MANAGER', 'WAREHOUSE', 'FACTORY'],
-        'test_definition': ['ADMIN', 'MANAGER', 'LAB_REVIEWER'],
+        'test_definition': ['ADMIN', 'MANAGER', 'LAB'],
         'category': ['ADMIN', 'MANAGER'],
     },
     # Retention (days) applied by `manage.py apply_retention`.
@@ -69,6 +74,7 @@ DEFAULTS = {
 
 # Keys the frontend may read (GET /api/v1/policy/) to shape forms; the API still enforces them.
 PUBLIC_KEYS = [
+    'receipt.weight_tolerance_percent', 'receiving.weigh_loaded_before_unloading', 'receiving.weigh_empty_before_finishing',
     'receiving.line_acceptance', 'package.unit_codes', 'package.type', 'lab.sample_scope',
     'lab.optional_failures_block_release', 'issue.whole_packages_only', 'issue.require_request',
     'issue.fifo_override_policy', 'issue.override_roles', 'stock.near_expiry_days', 'master.create_roles',

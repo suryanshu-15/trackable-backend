@@ -11,8 +11,8 @@ class Role(models.TextChoices):
     GATE = 'GATE', _('Gate Operator')
     RECEIVING = 'RECEIVING', _('Receiving / Unloading Worker')
     WAREHOUSE = 'WAREHOUSE', _('Warehouse Operator')
-    LAB_TECH = 'LAB_TECH', _('Lab Technician')
-    LAB_REVIEWER = 'LAB_REVIEWER', _('Lab Reviewer / Quality Manager')
+    # One laboratory role (2026-11-23): takes samples and records pass / fail.
+    LAB = 'LAB', _('Laboratory')
     FACTORY = 'FACTORY', _('Factory / Requester')
     AUDITOR = 'AUDITOR', _('Auditor (Read-only)')
     MANAGER = 'MANAGER', _('Manager')

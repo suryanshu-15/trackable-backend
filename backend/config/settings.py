@@ -127,8 +127,10 @@ STORAGES = {
 MEDIA_URL = config('MEDIA_URL', default='/media/')
 MEDIA_ROOT = config('MEDIA_ROOT', default=str(BASE_DIR / 'mediafiles'))
 
-# QR labels encode <FRONTEND_BASE_URL>/scan/<opaque token>; the token resolves server-side
-FRONTEND_BASE_URL = config('FRONTEND_BASE_URL', default='http://localhost:3000').rstrip('/')
+# QR labels encode <FRONTEND_BASE_URL>/scan/<opaque token>; the token resolves server-side.
+# Leave empty to use the address the app was opened at (sent by the frontend); set it to pin one
+# stable public address (recommended in production, since printed labels outlive address changes).
+FRONTEND_BASE_URL = config('FRONTEND_BASE_URL', default='').rstrip('/')
 
 MAX_UPLOAD_SIZE_MB = 20
 ALLOWED_UPLOAD_EXTENSIONS = [

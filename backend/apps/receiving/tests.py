@@ -123,10 +123,11 @@ class WeightTests(ReceivingTestCase):
     def test_weight_correction_requires_reason_and_is_audited(self):
         r = self.create_receipt()
         self.post(r['id'], 'register')
-        resp = self.post(r['id'], 'correct-weights', {'tare_weight': '5500'})
+        manager = client_for(self.fx.users['MANAGER'])
+        resp = self.post(r['id'], 'correct-weights', {'tare_weight': '5500'}, client=manager)
         self.assertEqual(resp.status_code, 400)
 
-        resp = self.post(r['id'], 'correct-weights', {'tare_weight': '5500', 'reason': 'Weighbridge re-read'})
+        resp = self.post(r['id'], 'correct-weights', {'tare_weight': '5500', 'reason': 'Weighbridge re-read'}, client=manager)
         self.assertEqual(resp.status_code, 200, resp.content)
         self.assertEqual(Decimal(resp.json()['net_weight']), Decimal('9500'))
         event = AuditEvent.objects.filter(entity_id=r['id'], extra__kind='WEIGHT_CORRECTION').get()
@@ -136,14 +137,20 @@ class WeightTests(ReceivingTestCase):
 
     def test_weight_correction_still_enforces_gross_gte_tare(self):
         r = self.create_receipt()
-        resp = self.post(r['id'], 'correct-weights', {'tare_weight': '20000', 'reason': 'x'})
+        resp = self.post(r['id'], 'correct-weights', {'tare_weight': '20000', 'reason': 'x'},
+                         client=client_for(self.fx.users['ADMIN']))
         self.assertEqual(resp.status_code, 400)
 
-    def test_weight_correction_role(self):
+    def test_only_admin_or_manager_can_edit_weights(self):
         r = self.create_receipt()
-        resp = self.post(r['id'], 'correct-weights', {'tare_weight': '5500', 'reason': 'x'},
-                         client=client_for(self.fx.users['WAREHOUSE']))
-        self.assertEqual(resp.status_code, 403)
+        for role in ('GATE', 'RECEIVING', 'WAREHOUSE', 'AUDITOR'):
+            resp = self.post(r['id'], 'correct-weights', {'tare_weight': '5500', 'reason': 'x'},
+                             client=client_for(self.fx.users[role]))
+            self.assertEqual(resp.status_code, 403, role)
+        for role in ('MANAGER', 'ADMIN'):
+            resp = self.post(r['id'], 'correct-weights', {'tare_weight': '5500', 'reason': 'x'},
+                             client=client_for(self.fx.users[role]))
+            self.assertEqual(resp.status_code, 200, role)
 
     def test_weight_discrepancy_against_declared_line_weights(self):
         r = self.create_receipt()

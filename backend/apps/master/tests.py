@@ -17,7 +17,7 @@ class MasterDataPermissionTests(TestCase):
 
     def test_roles_outside_the_create_list_cannot_add(self):
         payload = {'code': 'S2', 'name': 'Two'}
-        lab = make_user('LAB_TECH')
+        lab = make_user('LAB', username='master_lab_user')
         self.assertEqual(client_for(lab).post('/api/v1/master/suppliers/', payload, format='json').status_code, 403)
         self.assertEqual(client_for(self.admin).post('/api/v1/master/suppliers/', payload, format='json').status_code, 201)
 

@@ -192,6 +192,22 @@ class LabelAndScanTests(TestCase):
         for key in data:
             self.assertNotIn('status', key)
 
+    def test_qr_address_follows_the_app_unless_pinned(self):
+        from django.test import override_settings
+        url = f'{PKG}/{self.pkg.id}/label/'
+        token = self.pkg.scan_token
+        with override_settings(FRONTEND_BASE_URL=''):
+            # Opened from a phone on the office network: the QR points back to that address.
+            data = self.client_r.get(url, HTTP_X_FRONTEND_ORIGIN='http://192.168.1.20:3000').json()
+            self.assertEqual(data['qr_payload'], f'http://192.168.1.20:3000/scan/{token}')
+            # Anything that is not a plain http(s) address is ignored.
+            for bad in ('javascript:alert(1)', 'https://evil.example/path', 'https://user@evil.example', ''):
+                data = self.client_r.get(url, HTTP_X_FRONTEND_ORIGIN=bad).json()
+                self.assertEqual(data['qr_payload'], f'http://localhost:3000/scan/{token}', bad)
+        with override_settings(FRONTEND_BASE_URL='https://trackable.example.com'):
+            data = self.client_r.get(url, HTTP_X_FRONTEND_ORIGIN='http://192.168.1.20:3000').json()
+            self.assertEqual(data['qr_payload'], f'https://trackable.example.com/scan/{token}')
+
     def test_qr_png(self):
         resp = self.client_r.get(f'{PKG}/{self.pkg.id}/qr/')
         self.assertEqual(resp['Content-Type'], 'image/png')

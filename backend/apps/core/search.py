@@ -13,7 +13,7 @@ from rest_framework.views import APIView
 from apps.core.exceptions import BusinessRuleViolation
 
 LIMIT = 10
-RECEIPT_READERS = ('ADMIN', 'GATE', 'RECEIVING', 'WAREHOUSE', 'LAB_TECH', 'LAB_REVIEWER', 'AUDITOR', 'MANAGER')
+RECEIPT_READERS = ('ADMIN', 'GATE', 'RECEIVING', 'WAREHOUSE', 'LAB', 'AUDITOR', 'MANAGER')
 
 
 def global_search(user, q):

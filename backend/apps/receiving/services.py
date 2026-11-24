@@ -98,16 +98,31 @@ def _validate_weights(gross, tare):
         )
 
 
+def next_gate_entry_number():
+    """Next gate register serial for this year, e.g. GE-2026-00042. Call inside a transaction."""
+    from django.db import connection
+    year = timezone.localdate().year
+    prefix = f'GE-{year}-'
+    with connection.cursor() as cur:  # serialise numbering across concurrent gate entries
+        cur.execute('SELECT pg_advisory_xact_lock(hashtext(current_database() || %s))', [f':gate-entry:{year}'])
+    last = (GoodsReceipt.objects.filter(gate_entry_number__startswith=prefix)
+            .order_by('-gate_entry_number').values_list('gate_entry_number', flat=True).first())
+    n = int(last.rsplit('-', 1)[1]) + 1 if last else 1
+    return f'{prefix}{n:05d}'
+
+
 @transaction.atomic
 def create_receipt(data, user, *, acknowledge_duplicate=False, request=None):
     """Create a DRAFT receipt. `data` is validated serializer data."""
     _validate_weights(data.get('gross_weight'), data.get('tare_weight'))
     dupes = _check_duplicates(data, acknowledge_duplicate)
     receipt = GoodsReceipt(**data, created_by=user, updated_by=user)
+    receipt.gate_entry_number = next_gate_entry_number()
     receipt.save()
     record_audit(
         user, AuditEvent.ACTION_CREATE, 'GoodsReceipt', receipt.id,
-        after={'receipt_number': receipt.receipt_number, 'status': receipt.status, **_weights_snapshot(receipt)},
+        after={'receipt_number': receipt.receipt_number, 'gate_entry_number': receipt.gate_entry_number,
+               'status': receipt.status, **_weights_snapshot(receipt)},
         extra={'duplicate_acknowledged': dupes} if dupes else None,
         request=request,
     )
@@ -161,6 +176,9 @@ def correct_weights(receipt, data, user, *, reason, request=None):
     if not changes:
         raise BusinessRuleViolation('No weight fields supplied.')
     _validate_weights(changes.get('gross_weight', receipt.gross_weight), changes.get('tare_weight', receipt.tare_weight))
+    if 'gross_weight' in changes or 'weight_unit' in changes:
+        check_loaded_above_invoice(receipt, changes.get('gross_weight', receipt.gross_weight),
+                                   changes.get('weight_unit', receipt.weight_unit))
 
     before = _weights_snapshot(receipt)
     for field, value in changes.items():
@@ -226,6 +244,29 @@ def _require_unloading_complete(receipt):
         )
 
 
+def check_loaded_above_invoice(receipt, gross, unit):
+    """A loaded truck always weighs more than the material on it: refuse a gross weight at or below the invoice weight."""
+    if gross is None or unit is None:
+        return
+    declared = declared_weight_total(receipt, unit)
+    if declared is not None and gross <= declared:
+        raise BusinessRuleViolation(
+            f'The loaded truck ({_plain(gross)} {unit.symbol}) must weigh more than the material on the invoice '
+            f'({_plain(declared)} {unit.symbol}). Check the weighbridge reading and the unit (kg or t).',
+            code='loaded_below_invoice', details={'weight': [f'More than {_plain(declared)} {unit.symbol}.']})
+
+
+def _require_loaded_weight(receipt):
+    if get_config('receiving.weigh_loaded_before_unloading') and receipt.gross_weight is None:
+        raise BusinessRuleViolation('Weigh the loaded truck before unloading starts.', code='loaded_weight_missing')
+
+
+def _require_unloaded_and_weighed(receipt):
+    _require_unloading_complete(receipt)
+    if get_config('receiving.weigh_empty_before_finishing') and receipt.tare_weight is None:
+        raise BusinessRuleViolation('Weigh the empty truck before finishing unloading.', code='empty_weight_missing')
+
+
 def _require_putaway_complete(receipt):
     from apps.inventory.services import receipt_has_pending_putaway
     if receipt_has_pending_putaway(receipt):
@@ -237,10 +278,10 @@ def _require_putaway_complete(receipt):
 RECEIPT_TRANSITIONS = {
     'register_at_gate': (('ADMIN', 'GATE'), None),
     'submit_for_unloading': (('ADMIN', 'GATE'), _require_lines),
-    'start_unloading': (('ADMIN', 'RECEIVING', 'WAREHOUSE'), None),
+    'start_unloading': (('ADMIN', 'RECEIVING', 'WAREHOUSE'), _require_loaded_weight),
     'mark_verification_pending': (('ADMIN', 'RECEIVING', 'WAREHOUSE'), _require_verified),
     'flag_exception': (('ADMIN', 'RECEIVING', 'WAREHOUSE'), None),
-    'mark_unloaded': (('ADMIN', 'RECEIVING', 'WAREHOUSE'), _require_unloading_complete),
+    'mark_unloaded': (('ADMIN', 'RECEIVING', 'WAREHOUSE'), _require_unloaded_and_weighed),
     'start_putaway': (('ADMIN', 'RECEIVING', 'WAREHOUSE'), None),
     'mark_stored': (('ADMIN', 'RECEIVING', 'WAREHOUSE'), _require_putaway_complete),
     'close': (('ADMIN', 'MANAGER'), None),
@@ -626,16 +667,60 @@ def attach_document(receipt, uploaded_file, document_type, user, *, notes='', re
 # Read models
 # ---------------------------------------------------------------------------
 
+def declared_weight_total(receipt, unit=None, convert=None):
+    """
+    Invoice weight in `unit` (default: the receipt's weight unit): each line's declared weight, or its
+    quantity when that is a weight (e.g. 0.25 t). None when a line cannot be converted or nothing is comparable.
+    Uses prefetched lines when present; `convert` may supply cached conversions.
+    """
+    unit = unit or receipt.weight_unit
+    if unit is None:
+        return None
+    convert = convert or convert_quantity
+    total, found = ZERO, False
+    for line in receipt.invoice_lines.all():
+        if line.declared_weight is not None and line.declared_weight_unit_id:
+            qty, from_unit = line.declared_weight, line.declared_weight_unit
+        elif line.declared_unit.unit_type == 'WEIGHT':
+            qty, from_unit = line.declared_quantity, line.declared_unit
+        else:
+            continue
+        converted = convert(qty, from_unit, unit)
+        if converted is None:
+            return None
+        total += converted
+        found = True
+    return total if found else None
+
+
+def cached_converter(conversions):
+    """convert_quantity over an in-memory list of UoMConversion rows (one query per request, not per line)."""
+    table = {(c.from_unit_id, c.to_unit_id): c.factor for c in conversions}
+
+    def convert(quantity, from_unit, to_unit):
+        if from_unit.pk == to_unit.pk:
+            return quantity
+        if (from_unit.pk, to_unit.pk) in table:
+            return quantity * table[(from_unit.pk, to_unit.pk)]
+        factor = table.get((to_unit.pk, from_unit.pk))
+        return quantity / factor if factor else None
+    return convert
+
+
+def _plain(value):
+    """Decimal as plain text without trailing zeros: 1250.0000 → '1250', 0.2500 → '0.25'."""
+    text = format(value.normalize(), 'f')
+    return text if text not in ('-0', '') else '0'
+
+
 def weight_discrepancy(receipt):
     """
-    Compare gate net weight with the sum of declared line weights (same unit only).
-    Returns None when there is nothing comparable; never infers product quantity.
+    Compare the weighbridge net weight (loaded − empty truck) with the invoice weight.
+    Returns None until both weighings exist or when nothing is comparable.
     """
     if receipt.net_weight is None or receipt.weight_unit_id is None:
         return None
-    declared = receipt.invoice_lines.filter(
-        declared_weight__isnull=False, declared_weight_unit_id=receipt.weight_unit_id,
-    ).aggregate(total=Sum('declared_weight'))['total']
+    declared = declared_weight_total(receipt)
     if declared is None:
         return None
     diff = receipt.net_weight - declared
@@ -643,8 +728,8 @@ def weight_discrepancy(receipt):
     tolerance = get_decimal('receipt.weight_tolerance_percent')
     return {
         'net_weight': str(receipt.net_weight),
-        'declared_line_weight': str(declared),
-        'difference': str(diff),
+        'declared_line_weight': _plain(declared),
+        'difference': _plain(diff),
         'difference_percent': str(round(pct, 2)),
         'tolerance_percent': str(tolerance),
         'exceeds_tolerance': pct > tolerance,
@@ -664,3 +749,149 @@ def receipt_timeline(receipt):
         | Q(entity_type='ReceiptDocument', entity_id__in=doc_ids)
         | Q(entity_type='ReceiptLineVerification', extra__receipt=rid)
     ).select_related('actor').order_by('timestamp')
+
+
+# ---------------------------------------------------------------------------
+# Gate register entry, weighbridge at receiving, gate out
+# ---------------------------------------------------------------------------
+
+GATE_LINE_FIELDS = ('material', 'material_name_declared', 'declared_quantity', 'declared_unit',
+                    'storage_location', 'batch_number', 'remarks')
+
+
+@transaction.atomic
+def save_gate_entry(receipt, data, user, *, send=False, acknowledge_duplicate=False, request=None):
+    """
+    One gate register row: header + material rows, saved together. With `send`, the truck is
+    registered and sent to receiving in the same step. `receipt` is None to create, or a DRAFT to edit.
+    Lines carry an optional `id` when editing; lines left out are removed.
+    """
+    lines = data.pop('lines')
+    if not lines:
+        raise BusinessRuleViolation('Add at least one material.', details={'lines': ['Add at least one material.']})
+    if receipt is None:
+        receipt = create_receipt(data, user, acknowledge_duplicate=acknowledge_duplicate, request=request)
+    else:
+        receipt = update_draft_receipt(receipt, data, user, acknowledge_duplicate=acknowledge_duplicate, request=request)
+
+    existing = {line.id: line for line in receipt.invoice_lines.all()}
+    keep = {row['id'] for row in lines if row.get('id')}
+    for line_id, line in existing.items():
+        if line_id not in keep:
+            delete_invoice_line(line, user, request=request)
+    saved = []
+    for row in lines:
+        values = {k: row[k] for k in GATE_LINE_FIELDS if k in row}
+        if values.get('material') and not values.get('material_name_declared'):
+            values['material_name_declared'] = values['material'].name
+        line = existing.get(row.get('id'))
+        if line is not None:
+            saved.append(update_invoice_line(line, values, user, request=request))
+        else:
+            saved.append(add_invoice_line(receipt, values, user, request=request))
+    # Line numbers follow the order of the rows on the form (two passes keep (receipt, line_number) unique).
+    if [line.line_number for line in saved] != list(range(1, len(saved) + 1)):
+        for i, line in enumerate(saved, start=1):
+            InvoiceLine.objects.filter(pk=line.pk).update(line_number=1000 + i)
+        for i, line in enumerate(saved, start=1):
+            InvoiceLine.objects.filter(pk=line.pk).update(line_number=i)
+
+    if send:
+        receipt = transition_receipt(receipt, 'register_at_gate', user, request=request)
+        receipt = transition_receipt(receipt, 'submit_for_unloading', user, request=request)
+    return receipt
+
+
+WEIGH_ROLES = ('ADMIN', 'RECEIVING', 'WAREHOUSE')
+LOADED_WEIGH_STATUSES = {ReceiptStatus.AWAITING_UNLOADING, ReceiptStatus.UNLOADING_IN_PROGRESS}
+EMPTY_WEIGH_STATUSES = {ReceiptStatus.UNLOADING_IN_PROGRESS, ReceiptStatus.VERIFICATION_PENDING,
+                        ReceiptStatus.EXCEPTION, ReceiptStatus.UNLOADED}
+
+
+@transaction.atomic
+def record_weight(receipt, *, stage, weight, unit, user, reference='', request=None):
+    """
+    Weighbridge reading at receiving. LOADED (gross) comes first, before unloading; EMPTY (tare)
+    after unloading. Each is recorded once; later changes go through correct_weights (reason required).
+    """
+    if not user.has_role(*WEIGH_ROLES):
+        raise BusinessRuleViolation('Your role cannot record weighbridge readings.', code='forbidden', status_code=403)
+    receipt = GoodsReceipt.objects.select_for_update().get(pk=receipt.pk)
+    weight = Decimal(weight)
+    if weight <= 0:
+        raise BusinessRuleViolation('Weight must be more than zero.', details={'weight': ['Must be more than zero.']})
+    before = _weights_snapshot(receipt)
+    now = timezone.now()
+    if stage == 'LOADED':
+        if receipt.status not in LOADED_WEIGH_STATUSES:
+            raise BusinessRuleViolation(
+                f'The loaded truck is weighed once it is sent to receiving (receipt is {receipt.get_status_display()}).',
+                code='weighing_not_allowed')
+        if receipt.gross_weight is not None:
+            raise BusinessRuleViolation('The loaded weight is already recorded; use weight correction to change it.',
+                                        code='already_weighed')
+        check_loaded_above_invoice(receipt, weight, unit)
+        receipt.gross_weight, receipt.weight_unit, receipt.gross_weighed_at = weight, unit, now
+    elif stage == 'EMPTY':
+        if receipt.gross_weight is None:
+            raise BusinessRuleViolation('Weigh the loaded truck first.', code='loaded_weight_missing')
+        if receipt.status not in EMPTY_WEIGH_STATUSES:
+            raise BusinessRuleViolation(
+                f'The empty truck is weighed after unloading starts (receipt is {receipt.get_status_display()}).',
+                code='weighing_not_allowed')
+        if receipt.tare_weight is not None:
+            raise BusinessRuleViolation('The empty weight is already recorded; use weight correction to change it.',
+                                        code='already_weighed')
+        tare = convert_quantity(weight, unit, receipt.weight_unit)
+        if tare is None:
+            raise BusinessRuleViolation(f'Enter the empty weight in {receipt.weight_unit.symbol}.',
+                                        details={'unit': ['No conversion to the loaded-weight unit.']})
+        if tare > receipt.gross_weight:
+            raise BusinessRuleViolation('The empty truck cannot weigh more than the loaded truck.',
+                                        details={'weight': ['More than the loaded weight.']})
+        receipt.tare_weight, receipt.tare_weighed_at = tare, now
+    else:
+        raise BusinessRuleViolation('Stage must be LOADED or EMPTY.', details={'stage': ['LOADED or EMPTY.']})
+    receipt.weighing_method = 'WEIGHBRIDGE'
+    if reference:
+        receipt.weighbridge_reference = reference
+    receipt.updated_by = user
+    receipt.save()
+    check = weight_discrepancy(receipt) if stage == 'EMPTY' else None
+    record_audit(user, AuditEvent.ACTION_UPDATE, 'GoodsReceipt', receipt.id, before=before,
+                 after=_weights_snapshot(receipt), extra={'weighing': stage, 'weight_check': check}, request=request)
+    if check and check['exceeds_tolerance']:
+        from apps.notifications.services import notify_roles
+        notify_roles(('MANAGER', 'ADMIN'), level='WARNING',
+                     title=f'Weight difference on {receipt.gate_entry_number or receipt.receipt_number}',
+                     message=f"Truck {receipt.vehicle_number}: net {check['net_weight']} vs invoice "
+                             f"{check['declared_line_weight']} {receipt.weight_unit.symbol} ({check['difference_percent']}%).",
+                     entity_type='GoodsReceipt', entity_id=receipt.id, link_url=f'/receipts/{receipt.id}', exclude=user)
+    return receipt
+
+
+GATE_OUT_AFTER = {ReceiptStatus.UNLOADED, ReceiptStatus.PUTAWAY_IN_PROGRESS, ReceiptStatus.STORED,
+                  ReceiptStatus.CLOSED, ReceiptStatus.CANCELLED}
+
+
+@transaction.atomic
+def record_gate_out(receipt, user, *, at=None, request=None):
+    """The truck leaves the site. Allowed once it is empty (weighed empty or unloading finished) or cancelled."""
+    if not user.has_role('ADMIN', 'GATE'):
+        raise BusinessRuleViolation('Only the gate records trucks leaving.', code='forbidden', status_code=403)
+    receipt = GoodsReceipt.objects.select_for_update().get(pk=receipt.pk)
+    if receipt.tare_weight is None and receipt.status not in GATE_OUT_AFTER:
+        raise BusinessRuleViolation('The truck can leave once it is unloaded and weighed empty.', code='truck_not_empty')
+    if receipt.gate_out_at and not user.has_role('ADMIN'):
+        raise BusinessRuleViolation('Gate out is already recorded; ask an administrator to change it.',
+                                    code='already_out')
+    at = at or timezone.now()
+    if at < receipt.arrival_datetime:
+        raise BusinessRuleViolation('Gate out cannot be before gate in.', details={'at': ['Before gate in.']})
+    before = {'gate_out_at': receipt.gate_out_at.isoformat() if receipt.gate_out_at else None}
+    receipt.gate_out_at = at
+    receipt.updated_by = user
+    receipt.save(update_fields=['gate_out_at', 'updated_by', 'updated_at'])
+    record_audit(user, AuditEvent.ACTION_UPDATE, 'GoodsReceipt', receipt.id, before=before,
+                 after={'gate_out_at': at.isoformat()}, extra={'gate_out': True}, request=request)
+    return receipt

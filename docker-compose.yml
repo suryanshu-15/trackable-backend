@@ -40,7 +40,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       MEDIA_ROOT: /data/media
       BUSINESS_TIMEZONE: ${BUSINESS_TIMEZONE:-Asia/Kolkata}
-      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-https://localhost}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-}
       LOG_FORMAT: json
       # TLS is terminated by the reverse proxy in front of this service
       SECURE_SSL_REDIRECT: ${SECURE_SSL_REDIRECT:-True}

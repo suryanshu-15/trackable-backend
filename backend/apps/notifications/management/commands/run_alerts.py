@@ -36,13 +36,13 @@ def collect_alerts():
     for pkg in inv.expiry_exposure(Package.objects.all()).select_related('material', 'unit'):
         expired = (pkg.expiry_date and pkg.expiry_date <= today) or (pkg.retest_date and pkg.retest_date < today)
         what = 'expired / retest overdue' if expired else 'expiring / retest due soon'
-        yield {'roles': ('WAREHOUSE', 'LAB_REVIEWER'), 'level': 'ERROR' if expired else 'WARNING',
+        yield {'roles': ('WAREHOUSE', 'LAB'), 'level': 'ERROR' if expired else 'WARNING',
                'title': f'{pkg.package_id} {what}',
                'message': f'{pkg.material.code} lot {pkg.batch_number}: {pkg.current_quantity} {pkg.unit.symbol}, '
                           f'expiry {pkg.expiry_date or "-"}, retest {pkg.retest_date or "-"}',
                'entity_type': 'Package', 'entity_id': pkg.pk, 'link_url': f'/packages/{pkg.pk}'}
     for s in LabSample.objects.filter(status__in=ACTIVE_SAMPLE_STATUSES, required_by__lt=timezone.now()).select_related('material'):
-        yield {'roles': ('LAB_TECH', 'LAB_REVIEWER'), 'level': 'WARNING', 'title': f'Sample {s.sample_id} overdue',
+        yield {'roles': ('LAB',), 'level': 'WARNING', 'title': f'Sample {s.sample_id} overdue',
                'message': f'{s.material.code}: due {timezone.localtime(s.required_by):%Y-%m-%d %H:%M}, status {s.get_status_display()}',
                'entity_type': 'LabSample', 'entity_id': s.pk, 'link_url': f'/lab/samples/{s.pk}'}
     overdue_after = timezone.now() - timedelta(hours=int(get_config('alerts.putaway_overdue_hours')))

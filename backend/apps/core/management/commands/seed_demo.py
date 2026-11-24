@@ -131,7 +131,7 @@ class Command(BaseCommand):
             self._issue_flow(units)
             return
         u = {r: User.objects.get(username=f'demo_{r.lower()}') for r in
-             ('GATE', 'RECEIVING', 'WAREHOUSE', 'LAB_TECH', 'LAB_REVIEWER')}
+             ('GATE', 'RECEIVING', 'WAREHOUSE', 'LAB')}
         sup = {s.code: s for s in Supplier.objects.filter(code__startswith='DEMO-SUP-')}
         mat = {m.code: m for m in Material.objects.filter(code__startswith='DEMO-MAT-')}
         loc = {l.code: l for l in StorageLocation.objects.filter(warehouse__code='DEMO-WH1')}
@@ -140,22 +140,36 @@ class Command(BaseCommand):
         def receipt(invoice, supplier, lines, arrived_hours_ago, **weights):
             r = rcv.create_receipt({'supplier': supplier, 'invoice_number': invoice, 'invoice_date': timezone.localdate(),
                                     'vehicle_number': f'OD02DM{invoice[-1]}{arrived_hours_ago:02d}',
-                                    'arrival_datetime': now - timedelta(hours=arrived_hours_ago), **weights}, u['GATE'])
+                                    'arrival_datetime': now - timedelta(hours=arrived_hours_ago),
+                                    'transporter_name': '[DEMO] Kalinga Roadlines', 'lr_number': f'LR-{invoice[-1]}{arrived_hours_ago:03d}',
+                                    'eway_bill_number': f'3210{arrived_hours_ago:08d}', 'driver_name': 'Ramesh',
+                                    'driver_mobile': '9876500000', **weights}, u['GATE'])
             for line in lines:
                 rcv.add_invoice_line(r, line, u['GATE'])
             return r
 
         def unload_and_store(r, qty_each, count):
-            for name, who in (('register_at_gate', 'GATE'), ('submit_for_unloading', 'GATE'), ('start_unloading', 'RECEIVING')):
-                r = rcv.transition_receipt(r, name, u[who])
+            for name in ('register_at_gate', 'submit_for_unloading'):
+                r = rcv.transition_receipt(r, name, u['GATE'])
             line = r.invoice_lines.get()
+            # Weighbridge at receiving: loaded truck first, empty truck after unloading.
+            empty_truck = Decimal('8000')
+            payload = rcv.convert_quantity(line.declared_quantity, line.declared_unit, kg) or Decimal('0')
+            if r.gross_weight is None:
+                r = rcv.record_weight(r, stage='LOADED', weight=empty_truck + payload, unit=kg, user=u['RECEIVING'],
+                                      reference=f'WB-{r.invoice_number[-1]}1')
+            r = rcv.transition_receipt(r, 'start_unloading', u['RECEIVING'])
             rcv.record_verification(line, {'received_quantity': line.declared_quantity, 'received_unit': line.declared_unit},
                                     u['RECEIVING'])
             pkgs = inv.create_packages(line, [{'quantity': Decimal(qty_each)}] * count, u['RECEIVING'])
             for p in pkgs:
                 inv.record_label_print(p, u['RECEIVING'])
-            for name in ('mark_verification_pending', 'mark_unloaded'):
-                r = rcv.transition_receipt(r, name, u['RECEIVING'])
+            r = rcv.transition_receipt(r, 'mark_verification_pending', u['RECEIVING'])
+            if r.tare_weight is None:
+                r = rcv.record_weight(r, stage='EMPTY', weight=empty_truck, unit=kg, user=u['RECEIVING'],
+                                      reference=f'WB-{r.invoice_number[-1]}2')
+            r = rcv.transition_receipt(r, 'mark_unloaded', u['RECEIVING'])
+            rcv.record_gate_out(r, u['GATE'])
             for p in pkgs:
                 inv.putaway_package(p, loc['Q'], u['WAREHOUSE'])
             return pkgs
@@ -166,23 +180,22 @@ class Command(BaseCommand):
         # A — released and on a shelf (available for issue)
         a = receipt('DEMO-INV-A', sup['DEMO-SUP-1'], [{'material': mat['DEMO-MAT-001'], 'declared_quantity': Decimal('1'),
                     'declared_unit': t, 'declared_weight': Decimal('1000'), 'declared_weight_unit': kg,
-                    'batch_number': 'DEMO-LOT-A1', **dates}], 30,
-                    gross_weight=Decimal('9020'), tare_weight=Decimal('8000'), weight_unit=kg)
+                    'batch_number': 'DEMO-LOT-A1', **dates}], 30)
         pkgs = unload_and_store(a, '0.25', 4)
         for bag in pkgs:  # one sample per bag
-            sample = lab.create_sample({'packages': [bag], 'required_by': now + timedelta(days=1)}, u['LAB_TECH'])
+            sample = lab.create_sample({'packages': [bag], 'required_by': now + timedelta(days=1)}, u['LAB'])
             # No weight drawn, so bags stay exactly 0.25 t and whole-bag issue can meet the demo request.
-            lab.collect_sample(sample, {}, u['LAB_TECH'])
-            run = lab.start_testing(sample, u['LAB_TECH'])
+            lab.collect_sample(sample, {}, u['LAB'])
+            run = lab.start_testing(sample, u['LAB'])
             tests = {x.code: x for x in sample.requested_tests.all()}
             lab.record_results(run, [
                 {'test_definition': tests['DEMO-MOIST'], 'numeric_result': Decimal('0.21')},
                 {'test_definition': tests['DEMO-PURITY'], 'numeric_result': Decimal('99.20')},
                 {'test_definition': tests['DEMO-APPEAR'], 'text_result': 'White crystalline powder'},
-            ], u['LAB_TECH'])
-            lab.submit_run(run, u['LAB_TECH'])
+            ], u['LAB'])
+            lab.submit_run(run, u['LAB'])
             lab.decide(sample, {'decision': 'RELEASED', 'reason': '[DEMO] All tests within specification'},
-                       u['LAB_REVIEWER'])
+                       u['LAB'])
         for p, shelf in zip(pkgs, ('A-R1-S1', 'A-R1-S1', 'A-R1-S2', 'A-R1-S2')):
             inv.transfer_package(p, loc[shelf], u['WAREHOUSE'], notes='[DEMO] released stock to rack')
 
@@ -192,9 +205,9 @@ class Command(BaseCommand):
         b = receipt('DEMO-INV-B', sup['DEMO-SUP-2'], [{'material': mat['DEMO-MAT-002'], 'declared_quantity': Decimal('0.5'),
                     'declared_unit': t, 'batch_number': 'DEMO-LOT-B1', **dates}], 20)
         for bag in unload_and_store(b, '0.25', 2):
-            sample = lab.create_sample({'packages': [bag], 'required_by': now + timedelta(hours=12)}, u['LAB_TECH'])
-            lab.collect_sample(sample, {}, u['LAB_TECH'])
-            lab.start_testing(sample, u['LAB_TECH'])
+            sample = lab.create_sample({'packages': [bag], 'required_by': now + timedelta(hours=12)}, u['LAB'])
+            lab.collect_sample(sample, {}, u['LAB'])
+            lab.start_testing(sample, u['LAB'])
 
         # C — registered at gate, awaiting unloading
         c = receipt('DEMO-INV-C', sup['DEMO-SUP-3'], [{'material': mat['DEMO-MAT-003'], 'declared_quantity': Decimal('2.4'),
@@ -219,7 +232,8 @@ class Command(BaseCommand):
         t = units['T']
         factory = Factory.objects.get(code='DEMO-F1')
         req = issuing.create_request({'factory': factory, 'department': factory.departments.get(code='MIX'),
-                                      'production_order': 'DEMO-PO-1001',
+                                      'production_order': 'DEMO-PO-1001', 'client_name': '[DEMO] Acme Detergents',
+                                      'product_name': 'Detergent base, special grade',
                                       'lines': [{'material': material, 'quantity': Decimal('0.75'), 'unit': t}]},
                                      factory_user)
         issuing.allocate_request(req, warehouse)

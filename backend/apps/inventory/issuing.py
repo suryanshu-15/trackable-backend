@@ -103,7 +103,9 @@ def candidates(material, unit, *, request_line=None, lock=False):
         usable = p.current_quantity - others.get(p.pk, ZERO)
         if usable > 0:
             rows.append((p, usable))
-    rows.sort(key=lambda r: (order_key(r[0], fefo), r[0].package_id))
+    # Among equally old stock, leftovers (bags returned from production or split off) come first,
+    # so part-used material is used up before full bags are opened.
+    rows.sort(key=lambda r: (order_key(r[0], fefo), r[0].parent_package_id is None, r[0].package_id))
     return rows, fefo
 
 
@@ -170,25 +172,65 @@ def create_request(data, user, *, request=None):
     lines = data.get('lines') or []
     if not lines:
         raise BusinessRuleViolation('Add at least one material line.', details={'lines': ['Required.']})
-    keys = [(l['material'].pk, l['unit'].pk) for l in lines]
-    if len(keys) != len(set(keys)):
-        raise BusinessRuleViolation('Each material / unit may appear only once per request.')
     for l in lines:
         if not l['material'].is_active:
             raise BusinessRuleViolation(f"{l['material'].code} is inactive.")
+    lines = _apply_composition(data, lines)
+    keys = [(l['material'].pk, l['unit'].pk) for l in lines]
+    if len(keys) != len(set(keys)):
+        raise BusinessRuleViolation('Each material / unit may appear only once per request.')
     req = MaterialRequest.objects.create(
         factory=data['factory'], department=data.get('department'), requested_by=user,
         required_by=data.get('required_by'), production_order=data.get('production_order', ''),
-        cost_centre=data.get('cost_centre', ''), notes=data.get('notes', ''), created_by=user, updated_by=user,
+        cost_centre=data.get('cost_centre', ''), notes=data.get('notes', ''),
+        client_name=data.get('client_name', ''), product_name=data.get('product_name', ''),
+        product_quantity=data.get('product_quantity'), product_unit=data.get('product_unit'),
+        created_by=user, updated_by=user,
     )
     for l in lines:
         MaterialRequestLine.objects.create(request=req, material=l['material'], requested_quantity=l['quantity'],
-                                           unit=l['unit'], notes=l.get('notes', ''))
+                                           unit=l['unit'], percentage=l.get('percentage'), notes=l.get('notes', ''))
     record_audit(user, AuditEvent.ACTION_CREATE, 'MaterialRequest', req.id, after=_request_snapshot(req), request=request)
     notify_roles(('WAREHOUSE',), title=f'Material request {req.request_number}',
                  message=f'{req.factory.name}: {len(lines)} line(s)', entity_type='MaterialRequest',
                  entity_id=req.id, link_url=f'/requests/{req.id}', exclude=user)
     return req
+
+
+def _apply_composition(data, lines):
+    """
+    A request for a mixture gives each material's share (%) of the product. The shares must add up
+    to 100 % and each line's quantity is worked out from the product quantity, in the product's unit.
+    """
+    shares = [l.get('percentage') for l in lines]
+    if all(p is None for p in shares):
+        return lines
+    if any(p is None for p in shares):
+        raise BusinessRuleViolation('Give a percentage for every material in the mixture, or for none.',
+                                    details={'lines': ['Percentage missing.']})
+    total = sum(shares, Decimal('0'))
+    if abs(total - Decimal('100')) > Decimal('0.01'):
+        raise BusinessRuleViolation(f'The mixture adds up to {total.normalize():f} %; it must be 100 %.',
+                                    code='composition_not_100', details={'lines': [f'Total {total.normalize():f} %.']})
+    qty, unit = data.get('product_quantity'), data.get('product_unit')
+    if not qty or not unit:
+        raise BusinessRuleViolation('Give the quantity of the product to make, so each share can be worked out.',
+                                    details={'product_quantity': ['Required for a mixture.']})
+    out = []
+    for l in lines:
+        share = (qty * l['percentage'] / Decimal('100')).quantize(Decimal('0.0001'))
+        if share <= 0:
+            raise BusinessRuleViolation(f"{l['material'].code}: the share is too small.")
+        out.append({**l, 'quantity': share, 'unit': unit})
+    return out
+
+
+def material_availability(material_ids):
+    """Lab-passed stock that can be issued now (released, not reserved), per material and unit."""
+    from .services import stock_balances
+    rows = stock_balances(Package.objects.filter(material_id__in=material_ids), ['material'])
+    return [{'material': r['material_id'], 'unit': r['unit__symbol'], 'available_quantity': r['available_quantity'],
+             'in_stock': r['quantity']} for r in rows]
 
 
 def _lock_request(req):
@@ -528,7 +570,7 @@ def create_return(data, user, *, request=None):
                  request=request)
     record_audit(user, AuditEvent.ACTION_RETURN, 'MaterialIssue', line.issue_id, reason=reason,
                  after={'return': ret.return_number, 'package': child.package_id, 'quantity': str(qty)}, request=request)
-    notify_roles(('LAB_REVIEWER',) if not requires_qc else ('LAB_TECH', 'LAB_REVIEWER'),
+    notify_roles(('LAB',),
                  title=f'Returned material {child.package_id} needs clearance',
                  message=f'{ret.return_number}: {qty} {line.unit.symbol} {line.material.code}',
                  entity_type='Package', entity_id=child.id, link_url=f'/packages/{child.id}', exclude=user)

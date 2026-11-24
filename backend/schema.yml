@@ -290,8 +290,7 @@ paths:
           - AUDITOR
           - FACTORY
           - GATE
-          - LAB_REVIEWER
-          - LAB_TECH
+          - LAB
           - MANAGER
           - RECEIVING
           - WAREHOUSE
@@ -300,8 +299,7 @@ paths:
           * `GATE` - Gate Operator
           * `RECEIVING` - Receiving / Unloading Worker
           * `WAREHOUSE` - Warehouse Operator
-          * `LAB_TECH` - Lab Technician
-          * `LAB_REVIEWER` - Lab Reviewer / Quality Manager
+          * `LAB` - Laboratory
           * `FACTORY` - Factory / Requester
           * `AUDITOR` - Auditor (Read-only)
           * `MANAGER` - Manager
@@ -2249,6 +2247,29 @@ paths:
                 type: object
                 additionalProperties: {}
           description: ''
+  /api/v1/inventory/requests/availability/:
+    get:
+      operationId: inventory_requests_availability_retrieve
+      description: Lab-passed stock the warehouse can issue now, per material — shown
+        while filling a request.
+      parameters:
+      - in: query
+        name: materials
+        schema:
+          type: string
+        description: Comma-separated material ids
+      tags:
+      - issue
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/v1/inventory/returns/:
     get:
       operationId: inventory_returns_list
@@ -3065,6 +3086,42 @@ paths:
               schema:
                 $ref: '#/components/schemas/LabSample'
           description: ''
+  /api/v1/laboratory/samples/{id}/result/:
+    post:
+      operationId: laboratory_samples_result_create
+      description: 'Simple flow: PASS releases the bag for the factory, FAIL blocks
+        it.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this lab sample.
+        required: true
+      tags:
+      - laboratory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PassFailRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PassFailRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PassFailRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QualityDisposition'
+          description: ''
   /api/v1/laboratory/samples/{id}/start-testing/:
     post:
       operationId: laboratory_samples_start_testing_create
@@ -3296,6 +3353,106 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PaginatedPackageListList'
+          description: ''
+  /api/v1/laboratory/samples/take/:
+    post:
+      operationId: laboratory_samples_take_create
+      description: 'Simple flow: take one sample from each chosen bag; the bags show
+        ''In lab test''.'
+      parameters:
+      - in: query
+        name: active
+        schema:
+          type: boolean
+      - in: query
+        name: batch_number
+        schema:
+          type: string
+      - in: query
+        name: material
+        schema:
+          type: integer
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - in: query
+        name: overdue
+        schema:
+          type: boolean
+      - in: query
+        name: package
+        schema:
+          type: string
+          format: uuid
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: status
+        schema:
+          type: array
+          items:
+            type: string
+            enum:
+            - CANCELLED
+            - COLLECTED
+            - COMPLETED
+            - RECEIVED_BY_LAB
+            - REQUESTED
+            - RESULTS_SUBMITTED
+            - RETEST_REQUIRED
+            - TESTING
+        description: |-
+          * `REQUESTED` - Requested (awaiting collection)
+          * `COLLECTED` - Collected
+          * `RECEIVED_BY_LAB` - Received by Lab
+          * `TESTING` - Testing
+          * `RESULTS_SUBMITTED` - Results awaiting review
+          * `RETEST_REQUIRED` - Retest Required
+          * `COMPLETED` - Completed
+          * `CANCELLED` - Cancelled
+        explode: true
+        style: form
+      tags:
+      - laboratory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TakeSamplesRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TakeSamplesRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TakeSamplesRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedLabSampleList'
           description: ''
   /api/v1/laboratory/test-runs/:
     get:
@@ -5965,6 +6122,80 @@ paths:
               schema:
                 $ref: '#/components/schemas/GoodsReceipt'
           description: ''
+  /api/v1/receiving/goods-receipts/{id}/gate-entry/:
+    put:
+      operationId: receiving_goods_receipts_gate_entry_update
+      description: Edit a draft gate entry (header and materials together).
+      parameters:
+      - in: query
+        name: acknowledge_duplicate
+        schema:
+          type: boolean
+        description: Proceed even though a matching supplier invoice exists.
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this goods receipt.
+        required: true
+      tags:
+      - receiving
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GateEntryInputRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GateEntryInputRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GateEntryInputRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoodsReceipt'
+          description: ''
+  /api/v1/receiving/goods-receipts/{id}/gate-out/:
+    post:
+      operationId: receiving_goods_receipts_gate_out_create
+      description: The truck leaves the site (gate out time).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this goods receipt.
+        required: true
+      tags:
+      - receiving
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GateOutRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GateOutRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GateOutRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoodsReceipt'
+          description: ''
   /api/v1/receiving/goods-receipts/{id}/mark-stored/:
     post:
       operationId: receiving_goods_receipts_mark_stored_create
@@ -6323,12 +6554,82 @@ paths:
               schema:
                 $ref: '#/components/schemas/GoodsReceipt'
           description: ''
+  /api/v1/receiving/goods-receipts/{id}/weigh/:
+    post:
+      operationId: receiving_goods_receipts_weigh_create
+      description: 'Weighbridge reading at receiving: LOADED truck before unloading,
+        EMPTY truck after.'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this goods receipt.
+        required: true
+      tags:
+      - receiving
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WeighInputRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/WeighInputRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/WeighInputRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoodsReceipt'
+          description: ''
   /api/v1/receiving/goods-receipts/dashboard/:
     get:
       operationId: receiving_goods_receipts_dashboard_retrieve
       description: Gate / inward dashboard counts, computed from persisted state.
       tags:
       - receiving
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoodsReceipt'
+          description: ''
+  /api/v1/receiving/goods-receipts/gate-entry/:
+    post:
+      operationId: receiving_goods_receipts_gate_entry_create
+      description: Create a gate register entry (truck, invoice and materials) in
+        one step; `send` hands it to receiving.
+      parameters:
+      - in: query
+        name: acknowledge_duplicate
+        schema:
+          type: boolean
+        description: Proceed even though a matching supplier invoice exists.
+      tags:
+      - receiving
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GateEntryInputRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GateEntryInputRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GateEntryInputRequest'
+        required: true
       security:
       - jwtAuth: []
       responses:
@@ -7373,6 +7674,26 @@ components:
         cost_centre:
           type: string
           readOnly: true
+        client_name:
+          type: string
+          readOnly: true
+        product_name:
+          type: string
+          readOnly: true
+          title: Product / grade
+        product_quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,11}(?:\.\d{0,4})?$
+          readOnly: true
+          nullable: true
+        product_unit:
+          type: integer
+          readOnly: true
+          nullable: true
+        product_unit_symbol:
+          type: string
+          readOnly: true
         notes:
           type: string
           readOnly: true
@@ -7405,6 +7726,7 @@ components:
           format: date-time
           readOnly: true
       required:
+      - client_name
       - closed_reason
       - cost_centre
       - created_at
@@ -7416,6 +7738,10 @@ components:
       - issue_numbers
       - lines
       - notes
+      - product_name
+      - product_quantity
+      - product_unit
+      - product_unit_symbol
       - production_order
       - request_number
       - requested_by
@@ -7440,6 +7766,113 @@ components:
       required:
       - code
       - name
+    GateEntryInputRequest:
+      type: object
+      description: 'One row of the gate register: truck and invoice, plus one row
+        per material.'
+      properties:
+        supplier:
+          type: integer
+        invoice_number:
+          type: string
+          minLength: 1
+          maxLength: 100
+        invoice_date:
+          type: string
+          format: date
+        arrival_datetime:
+          type: string
+          format: date-time
+        vehicle_number:
+          type: string
+          minLength: 1
+          maxLength: 50
+        transporter_name:
+          type: string
+          maxLength: 200
+        lr_number:
+          type: string
+          maxLength: 100
+        eway_bill_number:
+          type: string
+          maxLength: 100
+        driver_name:
+          type: string
+          maxLength: 100
+        driver_mobile:
+          type: string
+          maxLength: 20
+          pattern: ^[0-9+\- ]{0,20}$
+        gate_notes:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/GateLineInputRequest'
+        send:
+          type: boolean
+          default: false
+          description: Register and send to receiving now.
+      required:
+      - arrival_datetime
+      - invoice_date
+      - invoice_number
+      - lines
+      - supplier
+      - vehicle_number
+    GateLineInputRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        material:
+          type: integer
+        material_name_declared:
+          type: string
+          maxLength: 300
+        declared_quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,11}(?:\.\d{0,4})?$
+        declared_unit:
+          type: integer
+        storage_location:
+          type: integer
+          nullable: true
+        batch_number:
+          type: string
+          maxLength: 200
+        remarks:
+          type: string
+      required:
+      - declared_quantity
+      - declared_unit
+      - material
+    GateMaterial:
+      type: object
+      properties:
+        description:
+          type: string
+        quantity:
+          type: string
+        unit:
+          type: string
+        location:
+          type: string
+          nullable: true
+      required:
+      - description
+      - location
+      - quantity
+      - unit
+    GateOutRequest:
+      type: object
+      properties:
+        at:
+          type: string
+          format: date-time
+          nullable: true
     GoodsReceipt:
       type: object
       properties:
@@ -7451,6 +7884,10 @@ components:
           type: string
           readOnly: true
           description: System-generated unique inward reference.
+        gate_entry_number:
+          type: string
+          readOnly: true
+          nullable: true
         supplier:
           type: integer
         supplier_detail:
@@ -7469,9 +7906,27 @@ components:
         driver_name:
           type: string
           maxLength: 100
+        driver_mobile:
+          type: string
+          maxLength: 20
+        transporter_name:
+          type: string
+          maxLength: 200
+        lr_number:
+          type: string
+          maxLength: 100
+        eway_bill_number:
+          type: string
+          title: E-way bill number
+          maxLength: 100
         arrival_datetime:
           type: string
           format: date-time
+        gate_out_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
         gross_weight:
           type: string
           format: decimal
@@ -7499,6 +7954,16 @@ components:
         weighbridge_reference:
           type: string
           maxLength: 100
+        gross_weighed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        tare_weighed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
         purchase_order_number:
           type: string
           maxLength: 100
@@ -7566,6 +8031,10 @@ components:
           additionalProperties: {}
           nullable: true
           readOnly: true
+        invoice_weight_kg:
+          type: string
+          nullable: true
+          readOnly: true
         created_by:
           type: integer
           readOnly: true
@@ -7590,11 +8059,15 @@ components:
       - created_by_name
       - documents
       - duplicate_warning
+      - gate_entry_number
+      - gate_out_at
       - gate_registered_at
+      - gross_weighed_at
       - id
       - invoice_date
       - invoice_lines
       - invoice_number
+      - invoice_weight_kg
       - net_weight
       - receipt_number
       - status
@@ -7602,6 +8075,7 @@ components:
       - stored_at
       - supplier
       - supplier_detail
+      - tare_weighed_at
       - unloading_completed_at
       - unloading_started_at
       - updated_at
@@ -7619,6 +8093,24 @@ components:
           type: string
           readOnly: true
           description: System-generated unique inward reference.
+        gate_entry_number:
+          type: string
+          readOnly: true
+          nullable: true
+        materials:
+          type: array
+          items:
+            $ref: '#/components/schemas/GateMaterial'
+          readOnly: true
+        invoice_weight_kg:
+          type: string
+          nullable: true
+          description: Invoice weight in kg (weight-unit rows only), shown when weighing
+            the truck.
+          readOnly: true
+        weight_unit_symbol:
+          type: string
+          readOnly: true
         supplier:
           type: integer
         supplier_name:
@@ -7633,9 +8125,19 @@ components:
         vehicle_number:
           type: string
           maxLength: 50
+        transporter_name:
+          type: string
+          maxLength: 200
+        lr_number:
+          type: string
+          maxLength: 100
         arrival_datetime:
           type: string
           format: date-time
+        gate_out_at:
+          type: string
+          format: date-time
+          nullable: true
         status:
           allOf:
           - $ref: '#/components/schemas/ReceiptStatusEnum'
@@ -7643,6 +8145,16 @@ components:
         status_display:
           type: string
           readOnly: true
+        gross_weight:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,11}(?:\.\d{0,4})?$
+          nullable: true
+        tare_weight:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,11}(?:\.\d{0,4})?$
+          nullable: true
         net_weight:
           type: string
           format: decimal
@@ -7658,16 +8170,20 @@ components:
       required:
       - arrival_datetime
       - created_at
+      - gate_entry_number
       - id
       - invoice_date
       - invoice_number
+      - invoice_weight_kg
       - line_count
+      - materials
       - receipt_number
       - status
       - status_display
       - supplier
       - supplier_name
       - vehicle_number
+      - weight_unit_symbol
     GoodsReceiptRequest:
       type: object
       properties:
@@ -7686,6 +8202,19 @@ components:
           maxLength: 50
         driver_name:
           type: string
+          maxLength: 100
+        driver_mobile:
+          type: string
+          maxLength: 20
+        transporter_name:
+          type: string
+          maxLength: 200
+        lr_number:
+          type: string
+          maxLength: 100
+        eway_bill_number:
+          type: string
+          title: E-way bill number
           maxLength: 100
         arrival_datetime:
           type: string
@@ -7923,6 +8452,12 @@ components:
           type: string
         remarks:
           type: string
+        storage_location:
+          type: integer
+          nullable: true
+        storage_location_code:
+          type: string
+          readOnly: true
         has_verification:
           type: boolean
           readOnly: true
@@ -7956,6 +8491,7 @@ components:
       - material_name
       - package_count
       - receipt
+      - storage_location_code
       - updated_at
       - verification_status
     InvoiceLineRequest:
@@ -8020,6 +8556,9 @@ components:
           type: string
         remarks:
           type: string
+        storage_location:
+          type: integer
+          nullable: true
       required:
       - declared_quantity
       - declared_unit
@@ -8106,6 +8645,16 @@ components:
         created_at:
           type: string
           format: date-time
+          readOnly: true
+        bags:
+          type: array
+          items:
+            $ref: '#/components/schemas/SampleBag'
+          readOnly: true
+        result:
+          allOf:
+          - $ref: '#/components/schemas/SampleResult'
+          nullable: true
           readOnly: true
         sampled_quantity:
           type: string
@@ -8196,6 +8745,7 @@ components:
       - allowed_actions
       - analyst_name
       - attachments
+      - bags
       - batch_number
       - cancel_reason
       - completed_at
@@ -8213,6 +8763,7 @@ components:
       - requested_tests
       - requested_tests_detail
       - required_by
+      - result
       - sample_condition
       - sample_id
       - sample_packages
@@ -8332,7 +8883,18 @@ components:
           type: string
           format: date-time
           readOnly: true
+        bags:
+          type: array
+          items:
+            $ref: '#/components/schemas/SampleBag'
+          readOnly: true
+        result:
+          allOf:
+          - $ref: '#/components/schemas/SampleResult'
+          nullable: true
+          readOnly: true
       required:
+      - bags
       - batch_number
       - created_at
       - id
@@ -8343,6 +8905,7 @@ components:
       - material_name
       - package_count
       - required_by
+      - result
       - sample_id
       - sampled_at
       - status
@@ -9237,6 +9800,22 @@ components:
           type: string
           default: ''
           maxLength: 100
+        client_name:
+          type: string
+          default: ''
+          maxLength: 200
+        product_name:
+          type: string
+          default: ''
+          maxLength: 200
+        product_quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,11}(?:\.\d{0,4})?$
+          nullable: true
+        product_unit:
+          type: integer
+          nullable: true
         notes:
           type: string
           default: ''
@@ -9284,6 +9863,12 @@ components:
         unit_symbol:
           type: string
           readOnly: true
+        percentage:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,3})?$
+          readOnly: true
+          nullable: true
         notes:
           type: string
           readOnly: true
@@ -9299,6 +9884,7 @@ components:
       - material_code
       - material_name
       - notes
+      - percentage
       - remaining_quantity
       - requested_quantity
       - reservations
@@ -9562,6 +10148,9 @@ components:
         invoice_line_number:
           type: integer
           readOnly: true
+        planned_location:
+          type: integer
+          readOnly: true
         parent_package:
           type: string
           format: uuid
@@ -9744,6 +10333,7 @@ components:
       - package_id
       - parent_package
       - parent_package_code
+      - planned_location
       - qc_status
       - qc_status_display
       - receipt
@@ -10186,6 +10776,25 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/InvoiceLine'
+    PaginatedLabSampleList:
+      type: object
+      properties:
+        count:
+          type: integer
+        next:
+          type: string
+          nullable: true
+        previous:
+          type: string
+          nullable: true
+        total_pages:
+          type: integer
+        current_page:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/LabSample'
     PaginatedLabSampleListList:
       type: object
       properties:
@@ -10585,6 +11194,24 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Warehouse'
+    PassFailRequest:
+      type: object
+      properties:
+        result:
+          $ref: '#/components/schemas/ResultEnum'
+        remarks:
+          type: string
+          default: ''
+        new_expiry_date:
+          type: string
+          format: date
+          nullable: true
+        new_retest_date:
+          type: string
+          format: date
+          nullable: true
+      required:
+      - result
     PatchedDepartmentRequest:
       type: object
       properties:
@@ -10631,6 +11258,19 @@ components:
           maxLength: 50
         driver_name:
           type: string
+          maxLength: 100
+        driver_mobile:
+          type: string
+          maxLength: 20
+        transporter_name:
+          type: string
+          maxLength: 200
+        lr_number:
+          type: string
+          maxLength: 100
+        eway_bill_number:
+          type: string
+          title: E-way bill number
           maxLength: 100
         arrival_datetime:
           type: string
@@ -10723,6 +11363,9 @@ components:
           type: string
         remarks:
           type: string
+        storage_location:
+          type: integer
+          nullable: true
     PatchedLabTestDefinitionRequest:
       type: object
       properties:
@@ -11471,14 +12114,17 @@ components:
           pattern: ^-?\d{0,11}(?:\.\d{0,4})?$
         unit:
           type: integer
+        percentage:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,3})?$
+          nullable: true
         notes:
           type: string
           default: ''
           maxLength: 500
       required:
       - material
-      - quantity
-      - unit
     RequestStatusEnum:
       enum:
       - SUBMITTED
@@ -11561,6 +12207,14 @@ components:
           type: string
       required:
       - test_definition
+    ResultEnum:
+      enum:
+      - PASS
+      - FAIL
+      type: string
+      description: |-
+        * `PASS` - PASS
+        * `FAIL` - FAIL
     ResultStatusEnum:
       enum:
       - PASS
@@ -11596,8 +12250,7 @@ components:
       - GATE
       - RECEIVING
       - WAREHOUSE
-      - LAB_TECH
-      - LAB_REVIEWER
+      - LAB
       - FACTORY
       - AUDITOR
       - MANAGER
@@ -11607,11 +12260,27 @@ components:
         * `GATE` - Gate Operator
         * `RECEIVING` - Receiving / Unloading Worker
         * `WAREHOUSE` - Warehouse Operator
-        * `LAB_TECH` - Lab Technician
-        * `LAB_REVIEWER` - Lab Reviewer / Quality Manager
+        * `LAB` - Laboratory
         * `FACTORY` - Factory / Requester
         * `AUDITOR` - Auditor (Read-only)
         * `MANAGER` - Manager
+    SampleBag:
+      type: object
+      properties:
+        id:
+          type: string
+        package_id:
+          type: string
+        quantity:
+          type: string
+        location:
+          type: string
+          nullable: true
+      required:
+      - id
+      - location
+      - package_id
+      - quantity
     SampleCreateRequest:
       type: object
       properties:
@@ -11693,6 +12362,20 @@ components:
       - qc_status
       - receipt_number
       - unit_symbol
+    SampleResult:
+      type: object
+      properties:
+        verdict:
+          type: string
+        remarks:
+          type: string
+        decided_at:
+          type: string
+          format: date-time
+      required:
+      - decided_at
+      - remarks
+      - verdict
     SampleStatusEnum:
       enum:
       - REQUESTED
@@ -11730,6 +12413,14 @@ components:
       required:
       - quantities
       - reason
+    StageEnum:
+      enum:
+      - LOADED
+      - EMPTY
+      type: string
+      description: |-
+        * `LOADED` - LOADED
+        * `EMPTY` - EMPTY
     StockAdjustment:
       type: object
       properties:
@@ -12027,6 +12718,19 @@ components:
       required:
       - code
       - name
+    TakeSamplesRequest:
+      type: object
+      properties:
+        packages:
+          type: array
+          items:
+            type: string
+            format: uuid
+        notes:
+          type: string
+          default: ''
+      required:
+      - packages
     TimelineEvent:
       type: object
       properties:
@@ -12566,6 +13270,25 @@ components:
       required:
       - code
       - name
+    WeighInputRequest:
+      type: object
+      properties:
+        stage:
+          $ref: '#/components/schemas/StageEnum'
+        weight:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,11}(?:\.\d{0,4})?$
+        unit:
+          type: integer
+        weighbridge_reference:
+          type: string
+          default: ''
+          maxLength: 100
+      required:
+      - stage
+      - unit
+      - weight
     WeighingMethodEnum:
       enum:
       - WEIGHBRIDGE

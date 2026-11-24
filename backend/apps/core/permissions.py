@@ -38,16 +38,16 @@ class IsWarehouseOrAbove(RolePermission):
 
 
 class IsLabTech(RolePermission):
-    allowed_roles = ['ADMIN', 'LAB_TECH', 'LAB_REVIEWER']
+    allowed_roles = ['ADMIN', 'LAB']
 
 
 class IsLabReviewer(RolePermission):
-    allowed_roles = ['ADMIN', 'LAB_REVIEWER']
+    allowed_roles = ['ADMIN', 'LAB']
 
 
 class IsAuditorOrAbove(RolePermission):
     """Read-only auditor access."""
-    allowed_roles = ['ADMIN', 'AUDITOR', 'MANAGER', 'LAB_REVIEWER']
+    allowed_roles = ['ADMIN', 'AUDITOR', 'MANAGER', 'LAB']
 
     def has_permission(self, request, view):
         if super().has_permission(request, view):

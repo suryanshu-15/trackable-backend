@@ -29,13 +29,14 @@ from .serializers import (
     QualityDispositionSerializer, QualityHoldSerializer, LabSampleAttachmentSerializer,
     SampleCreateSerializer, CollectSerializer, ResultsInputSerializer, NotesSerializer,
     DispositionInputSerializer, ReasonInputSerializer, AttachmentUploadSerializer, HoldCreateSerializer,
+    TakeSamplesSerializer, PassFailSerializer,
 )
 from . import services
 
 LabRoles = role_permission(*services.LAB_ROLES)
 Reviewers = role_permission(*services.REVIEWER_ROLES)
 # Lab reports / certificates: lab, quality, warehouse, management and audit
-ReportReaders = role_permission('ADMIN', 'LAB_TECH', 'LAB_REVIEWER', 'WAREHOUSE', 'MANAGER', 'AUDITOR')
+ReportReaders = role_permission('ADMIN', 'LAB', 'WAREHOUSE', 'MANAGER', 'AUDITOR')
 
 
 class SampleFilter(django_filters.FilterSet):
@@ -72,7 +73,7 @@ class LabSampleViewSet(viewsets.ModelViewSet):
         qs = LabSample.objects.select_related('material', 'sampled_by', 'sampled_unit') \
             .annotate(package_count=Count('sample_packages', distinct=True))
         if self.action == 'list':
-            return qs
+            return qs.prefetch_related('sample_packages__package__current_location', 'dispositions')
         return qs.prefetch_related(
             'sample_packages__package__unit', 'sample_packages__package__invoice_line__receipt',
             'test_runs__results__test_definition', 'test_runs__results__entered_by',
@@ -90,6 +91,30 @@ class LabSampleViewSet(viewsets.ModelViewSet):
         s.is_valid(raise_exception=True)
         return self._detail(services.create_sample(s.validated_data, request.user, request=request),
                             status.HTTP_201_CREATED)
+
+    @extend_schema(tags=['laboratory'], request=TakeSamplesSerializer, responses=LabSampleSerializer(many=True))
+    @action(detail=False, methods=['post'], url_path='take')
+    def take(self, request):
+        """Simple flow: take one sample from each chosen bag; the bags show 'In lab test'."""
+        s = TakeSamplesSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        samples = services.take_samples(s.validated_data['packages'], request.user, notes=s.validated_data['notes'],
+                                        request=request)
+        ctx = self.get_serializer_context()
+        return Response([LabSampleSerializer(self.get_queryset().get(pk=x.pk), context=ctx).data for x in samples],
+                        status=status.HTTP_201_CREATED)
+
+    @extend_schema(tags=['laboratory'], request=PassFailSerializer, responses=QualityDispositionSerializer)
+    @action(detail=True, methods=['post'], url_path='result')
+    def result(self, request, pk=None):
+        """Simple flow: PASS releases the bag for the factory, FAIL blocks it."""
+        s = PassFailSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        d = s.validated_data
+        disposition = services.record_pass_fail(
+            self.get_object(), request.user, passed=d['result'] == 'PASS', remarks=d['remarks'],
+            new_expiry_date=d.get('new_expiry_date'), new_retest_date=d.get('new_retest_date'), request=request)
+        return Response(QualityDispositionSerializer(disposition).data, status=status.HTTP_201_CREATED)
 
     @extend_schema(tags=['laboratory'], request=CollectSerializer, responses=LabSampleSerializer)
     @action(detail=True, methods=['post'])

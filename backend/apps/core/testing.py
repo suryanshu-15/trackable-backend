@@ -35,6 +35,9 @@ GENERIC_POLICY = {
     'lab.optional_failures_block_release': True,
     'issue.whole_packages_only': False,
     'issue.require_request': False,
+    'lab.separation_of_duties': True,
+    'receiving.weigh_loaded_before_unloading': False,
+    'receiving.weigh_empty_before_finishing': False,
 }
 GENERIC_MATERIAL = {'requires_expiry': False, 'requires_retest': False, 'allow_partial_issue': True}
 
@@ -61,6 +64,9 @@ class Fixtures:
         self.material_noqc = Material.objects.create(
             code='MAT-2', name='No-QC Material', default_unit=self.kg, qc_required=False, **GENERIC_MATERIAL)
         self.users = {role.value: make_user(role.value) for role in Role}
+        # Older tests model two lab people (who enters results vs who decides); both have the Lab role.
+        self.users['LAB_TECH'] = self.users['LAB']
+        self.users['LAB_REVIEWER'] = make_user('LAB', username='test_lab_reviewer')
         self.warehouse = Warehouse.objects.create(code='WH', name='Warehouse')
         self.quarantine = StorageLocation.objects.create(
             warehouse=self.warehouse, code='Q1', name='Quarantine bin', location_type='QUARANTINE', is_quarantine=True)
@@ -90,8 +96,14 @@ class Fixtures:
                     'batch_number': 'LOT-A'}
             line.update(overrides)
             services.add_invoice_line(receipt, line, gate)
-        for name, user in (('register_at_gate', gate), ('submit_for_unloading', gate), ('start_unloading', receiving)):
+        for name, user in (('register_at_gate', gate), ('submit_for_unloading', gate)):
             receipt = services.transition_receipt(receipt, name, user)
+        from apps.core.config import get_config
+        if get_config('receiving.weigh_loaded_before_unloading') and receipt.gross_weight is None:
+            receipt = services.record_weight(receipt, stage='LOADED', weight=Decimal('15000'), unit=self.kg, user=receiving)
+        receipt = services.transition_receipt(receipt, 'start_unloading', receiving)
+        if get_config('receiving.weigh_empty_before_finishing') and receipt.tare_weight is None:
+            receipt = services.record_weight(receipt, stage='EMPTY', weight=Decimal('5000'), unit=self.kg, user=receiving)
         return receipt
 
     def verify(self, line, received='200', unit=None, user=None, **extra):

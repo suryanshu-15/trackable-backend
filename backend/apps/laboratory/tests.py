@@ -255,10 +255,10 @@ class DispositionTests(LabTestCase):
         sample, _ = self.submitted(appear='Yellow lumps')
         self.assertEqual(self.decide(sample, 'RELEASED').json()['error'], 'results_not_passing')
 
-    def test_lab_tech_cannot_decide(self):
+    def test_only_the_lab_decides(self):
         sample, _ = self.submitted()
-        self.assertEqual(self.decide(sample, 'RELEASED', client=self.c_tech).status_code, 403)
         self.assertEqual(self.decide(sample, 'RELEASED', client=client_for(self.fx.users['WAREHOUSE'])).status_code, 403)
+        self.assertEqual(self.decide(sample, 'RELEASED', client=client_for(self.fx.users['FACTORY'])).status_code, 403)
 
     def test_separation_of_duties(self):
         sample, run = self.sample_through_testing()
@@ -442,3 +442,59 @@ class DashboardAndAttachmentTests(LabTestCase):
                 self.assertEqual(bad.status_code, 400)
         finally:
             shutil.rmtree(media, ignore_errors=True)
+
+
+class SimpleLabFlowTests(LabTestCase):
+    """2026-11-23: one Lab role — take a sample, test it, record PASS or FAIL."""
+
+    def setUp(self):
+        super().setUp()
+        SystemConfiguration.objects.update_or_create(key='lab.separation_of_duties', defaults={'value': 'false'})
+        self.c_lab = client_for(self.fx.users['LAB'])
+
+    def take(self, pkgs, client=None):
+        return (client or self.c_lab).post(f'{API}/samples/take/', {'packages': [str(p.pk) for p in pkgs]}, format='json')
+
+    def result(self, sample_id, value, client=None, **extra):
+        return (client or self.c_lab).post(f'{API}/samples/{sample_id}/result/', {'result': value, **extra}, format='json')
+
+    def test_pass_releases_the_bag_for_the_factory_and_fail_blocks_it(self):
+        resp = self.take(self.pkgs[:2])
+        self.assertEqual(resp.status_code, 201, resp.content)
+        samples = resp.json()
+        self.assertEqual([s['status'] for s in samples], ['TESTING', 'TESTING'])
+        self.assertEqual({fresh(p).qc_status for p in self.pkgs[:2]}, {QCStatus.TESTING})
+        ok = self.result(samples[0]['id'], 'PASS', remarks='Within spec')
+        self.assertEqual((ok.status_code, ok.json()['decision']), (201, 'RELEASED'))
+        bad = self.result(samples[1]['id'], 'FAIL')
+        self.assertEqual(bad.json()['decision'], 'REJECTED')
+        passed, failed = fresh(self.pkgs[0]), fresh(self.pkgs[1])
+        self.assertEqual((passed.qc_status, failed.qc_status), (QCStatus.PASSED, QCStatus.FAILED))
+        # The same person took the sample and gave the result: one Lab role, no second reviewer.
+        self.assertEqual(LabSample.objects.get(pk=samples[0]['id']).status, SampleStatus.COMPLETED)
+        # Passed stock moved to a shelf is available for issue; failed stock is not.
+        inv.transfer_package(passed, self.fx.shelf1, self.fx.users['WAREHOUSE'])
+        self.assertTrue(Package.objects.available().filter(pk=passed.pk).exists())
+        self.assertFalse(Package.objects.available().filter(pk=failed.pk).exists())
+
+    def test_only_the_lab_and_only_while_testing(self):
+        self.assertEqual(self.take(self.pkgs[:1], client=client_for(self.fx.users['WAREHOUSE'])).status_code, 403)
+        sample = self.take(self.pkgs[:1]).json()[0]
+        self.assertEqual(self.result(sample['id'], 'PASS', client=client_for(self.fx.users['FACTORY'])).status_code, 403)
+        self.assertEqual(self.result(sample['id'], 'PASS').status_code, 201)
+        self.assertEqual(self.result(sample['id'], 'FAIL').json()['error'], 'not_testing')
+        # A passed bag can be sampled again later (retest); a bag already in testing cannot.
+        self.assertEqual(self.take(self.pkgs[1:2]).status_code, 201)
+        self.assertEqual(self.take(self.pkgs[1:2]).status_code, 400)
+
+
+    def test_pass_fail_also_works_for_samples_started_with_detailed_tests(self):
+        # Started the old way (material has tests, nothing entered yet): the lab's Pass is the overall result.
+        sample, run = self.sample_through_testing(packages=[self.pkgs[0]])
+        self.assertEqual(self.result(sample.id, 'PASS').status_code, 201)
+        self.assertEqual(fresh(self.pkgs[0]).qc_status, QCStatus.PASSED)
+        # But Pass never overrules a required result that was entered and failed.
+        sample2, run2 = self.sample_through_testing(packages=[self.pkgs[1]])
+        lab.record_results(run2, [{'test_definition': self.moist, 'numeric_result': Decimal('5')}], self.tech)
+        self.assertEqual(self.result(sample2.id, 'PASS').json()['error'], 'results_not_passing')
+        self.assertEqual(self.result(sample2.id, 'FAIL').status_code, 201)

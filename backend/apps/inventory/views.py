@@ -37,7 +37,7 @@ from . import services, issuing
 
 Handlers = role_permission('ADMIN', 'RECEIVING', 'WAREHOUSE')
 WarehouseOps = role_permission('ADMIN', 'WAREHOUSE')
-TagPrinters = role_permission('ADMIN', 'WAREHOUSE', 'LAB_REVIEWER')
+TagPrinters = role_permission('ADMIN', 'WAREHOUSE', 'LAB')
 
 
 class PackageFilter(django_filters.FilterSet):
@@ -99,14 +99,14 @@ class PackageViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=['get'], url_path='label')
     def label(self, request, pk=None):
         """Data for rendering a label. Contains no mutable status."""
-        return Response(services.label_data(self.get_object()))
+        return Response(services.label_data(self.get_object(), base=services.frontend_origin(request)))
 
     @extend_schema(tags=['inventory'], responses={(200, 'image/png'): OpenApiTypes.BINARY})
     @action(detail=True, methods=['get'], url_path='qr')
     def qr_image(self, request, pk=None):
         pkg = self.get_object()
         buf = io.BytesIO()
-        qrcode.make(services.qr_payload(pkg), box_size=8, border=2).save(buf, format='PNG')
+        qrcode.make(services.qr_payload(pkg, services.frontend_origin(request)), box_size=8, border=2).save(buf, format='PNG')
         return HttpResponse(buf.getvalue(), content_type='image/png')
 
     @extend_schema(tags=['inventory'], request=LabelPrintSerializer, responses=PackageSerializer)
@@ -312,14 +312,15 @@ class MaterialRequestViewSet(viewsets.ModelViewSet):
     http_method_names = ['get', 'post', 'head', 'options']
     serializer_class = MaterialRequestSerializer
     filterset_class = RequestFilter
-    search_fields = ['request_number', 'production_order', 'cost_centre', 'factory__name', 'lines__material__code']
+    search_fields = ['request_number', 'production_order', 'cost_centre', 'factory__name', 'lines__material__code',
+                     'client_name', 'product_name']
     ordering_fields = ['created_at', 'required_by']
     ordering = ['-created_at']
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):  # schema generation has no user
             return MaterialRequest.objects.none()
-        qs = MaterialRequest.objects.select_related('factory', 'department', 'requested_by').prefetch_related(
+        qs = MaterialRequest.objects.select_related('factory', 'department', 'requested_by', 'product_unit').prefetch_related(
             'lines__material', 'lines__unit', 'issues')
         return _factory_scoped(self.request.user, qs, 'requested_by')
 
@@ -330,6 +331,14 @@ class MaterialRequestViewSet(viewsets.ModelViewSet):
         s = MaterialRequestInputSerializer(data=request.data)
         s.is_valid(raise_exception=True)
         return self._detail(issuing.create_request(s.validated_data, request.user, request=request), status.HTTP_201_CREATED)
+
+    @extend_schema(tags=['issue'], responses=OpenApiTypes.OBJECT,
+                   parameters=[OpenApiParameter('materials', str, description='Comma-separated material ids')])
+    @action(detail=False, methods=['get'])
+    def availability(self, request):
+        """Lab-passed stock the warehouse can issue now, per material — shown while filling a request."""
+        ids = [int(x) for x in (request.query_params.get('materials') or '').split(',') if x.strip().isdigit()][:50]
+        return Response(issuing.material_availability(ids) if ids else [])
 
     @extend_schema(tags=['issue'], responses=OpenApiTypes.OBJECT)
     @action(detail=True, methods=['get'])

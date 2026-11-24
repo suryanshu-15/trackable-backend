@@ -10,7 +10,7 @@ from django_fsm import FSMField, transition
 
 from apps.core.mixins import TimeStampedModel, AuditedModel, UUIDModel
 from apps.core.utils import generate_receipt_number
-from apps.master.models import Supplier, Material, UnitOfMeasure
+from apps.master.models import Supplier, Material, UnitOfMeasure, StorageLocation
 
 
 # ---------------------------------------------------------------------------
@@ -73,11 +73,18 @@ class GoodsReceipt(UUIDModel, AuditedModel):
     # Invoice details
     invoice_number = models.CharField(max_length=100, db_index=True)
     invoice_date = models.DateField()
+    # Gate register serial (GE-YYYY-NNNNN), assigned when the receipt is created
+    gate_entry_number = models.CharField(max_length=30, unique=True, null=True, blank=True, editable=False)
     # Truck
     vehicle_number = models.CharField(max_length=50, db_index=True)
     driver_name = models.CharField(max_length=100, blank=True)
-    # Arrival
+    driver_mobile = models.CharField(max_length=20, blank=True)
+    transporter_name = models.CharField(max_length=200, blank=True)
+    lr_number = models.CharField('LR number', max_length=100, blank=True, db_index=True)
+    eway_bill_number = models.CharField('e-way bill number', max_length=100, blank=True, db_index=True)
+    # Gate in (arrival) and gate out
     arrival_datetime = models.DateTimeField(db_index=True)
+    gate_out_at = models.DateTimeField(null=True, blank=True)
     # Weighing
     gross_weight = models.DecimalField(max_digits=15, decimal_places=4, null=True, blank=True)
     tare_weight = models.DecimalField(max_digits=15, decimal_places=4, null=True, blank=True)
@@ -91,6 +98,9 @@ class GoodsReceipt(UUIDModel, AuditedModel):
         default=WeighingMethod.VENDOR_DECLARED,
     )
     weighbridge_reference = models.CharField(max_length=100, blank=True)
+    # When the loaded (gross) and empty (tare) truck were weighed at receiving
+    gross_weighed_at = models.DateTimeField(null=True, blank=True)
+    tare_weighed_at = models.DateTimeField(null=True, blank=True)
     # References
     purchase_order_number = models.CharField(max_length=100, blank=True, db_index=True)
     delivery_challan_number = models.CharField(max_length=100, blank=True)
@@ -267,6 +277,10 @@ class InvoiceLine(UUIDModel, AuditedModel):
     # Quality
     required_tests = models.ManyToManyField('master.LabTestDefinition', blank=True, related_name='+')
     quality_specification = models.TextField(blank=True)
+    # Where the gate register says this material should be stored
+    storage_location = models.ForeignKey(
+        StorageLocation, null=True, blank=True, on_delete=models.PROTECT, related_name='+',
+    )
     # Remarks
     remarks = models.TextField(blank=True)
 

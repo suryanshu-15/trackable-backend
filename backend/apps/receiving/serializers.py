@@ -4,6 +4,7 @@ Serializers for Receiving app.
 from decimal import Decimal
 
 from rest_framework import serializers
+from drf_spectacular.utils import extend_schema_field
 from django.urls import reverse
 from .models import (
     GoodsReceipt, InvoiceLine, ReceiptDocument,
@@ -11,7 +12,7 @@ from .models import (
 )
 from . import services
 from apps.core.models import AuditEvent
-from apps.master.models import Material, UnitOfMeasure
+from apps.master.models import Material, StorageLocation, Supplier, UnitOfMeasure
 from apps.master.serializers import SupplierSerializer
 
 
@@ -46,6 +47,7 @@ class InvoiceLineSerializer(serializers.ModelSerializer):
     accepted_quantity = serializers.DecimalField(
         source='verification.accepted_quantity', max_digits=15, decimal_places=4, read_only=True, default=None)
     package_count = serializers.SerializerMethodField()
+    storage_location_code = serializers.CharField(source='storage_location.code', read_only=True, default=None)
 
     class Meta:
         model = InvoiceLine
@@ -55,7 +57,7 @@ class InvoiceLineSerializer(serializers.ModelSerializer):
             'grade_or_specification', 'declared_quantity', 'declared_unit',
             'declared_unit_symbol', 'declared_weight', 'declared_weight_unit',
             'batch_number', 'manufacturing_date', 'expiry_date', 'retest_date',
-            'required_tests', 'quality_specification', 'remarks',
+            'required_tests', 'quality_specification', 'remarks', 'storage_location', 'storage_location_code',
             'has_verification', 'verification_status', 'accepted_quantity', 'package_count',
             'created_at', 'updated_at',
         ]
@@ -90,20 +92,52 @@ class InvoiceLineSerializer(serializers.ModelSerializer):
         return attrs
 
 
+def _invoice_weight_kg(obj, context) -> str | None:
+    """Invoice weight in kg; the kg unit and conversions are loaded once per request."""
+    if '_kg' not in context:
+        from apps.master.models import UoMConversion
+        context['_kg'] = UnitOfMeasure.objects.filter(code='KG').first()
+        context['_convert'] = services.cached_converter(list(UoMConversion.objects.all()))
+    kg = context['_kg']
+    total = services.declared_weight_total(obj, kg, context['_convert']) if kg else None
+    return services._plain(total) if total is not None else None
+
+
+class GateMaterialSerializer(serializers.Serializer):
+    description = serializers.CharField()
+    quantity = serializers.CharField()
+    unit = serializers.CharField()
+    location = serializers.CharField(allow_null=True)
+
+
 class GoodsReceiptListSerializer(serializers.ModelSerializer):
     supplier_name = serializers.CharField(source='supplier.name', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     line_count = serializers.IntegerField(read_only=True)
+    materials = serializers.SerializerMethodField()
+    invoice_weight_kg = serializers.SerializerMethodField()
+    weight_unit_symbol = serializers.CharField(source='weight_unit.symbol', read_only=True, default=None)
 
     class Meta:
         model = GoodsReceipt
         fields = [
-            'id', 'receipt_number', 'supplier', 'supplier_name',
-            'invoice_number', 'invoice_date', 'vehicle_number',
-            'arrival_datetime', 'status', 'status_display',
-            'net_weight', 'line_count', 'created_at',
+            'id', 'receipt_number', 'gate_entry_number', 'materials', 'invoice_weight_kg', 'weight_unit_symbol', 'supplier', 'supplier_name',
+            'invoice_number', 'invoice_date', 'vehicle_number', 'transporter_name', 'lr_number',
+            'arrival_datetime', 'gate_out_at', 'status', 'status_display',
+            'gross_weight', 'tare_weight', 'net_weight', 'line_count', 'created_at',
         ]
-        read_only_fields = ['id', 'receipt_number', 'status', 'created_at']
+        read_only_fields = ['id', 'receipt_number', 'gate_entry_number', 'status', 'created_at']
+
+    def get_invoice_weight_kg(self, obj) -> str | None:
+        """Invoice weight in kg (weight-unit rows only), shown when weighing the truck."""
+        return _invoice_weight_kg(obj, self.context)
+
+    @extend_schema_field(GateMaterialSerializer(many=True))
+    def get_materials(self, obj):
+        """Material rows as on the gate register: description, quantity, unit and planned location."""
+        return [{'description': line.material_name_declared, 'quantity': str(line.declared_quantity),
+                 'unit': line.declared_unit.symbol, 'location': line.storage_location.code if line.storage_location else None}
+                for line in obj.invoice_lines.all()]
 
 
 class GoodsReceiptSerializer(serializers.ModelSerializer):
@@ -115,25 +149,29 @@ class GoodsReceiptSerializer(serializers.ModelSerializer):
     allowed_transitions = serializers.SerializerMethodField()
     duplicate_warning = serializers.SerializerMethodField()
     weight_discrepancy = serializers.SerializerMethodField()
+    invoice_weight_kg = serializers.SerializerMethodField()
     created_by_name = serializers.CharField(source='created_by.display_name', read_only=True, default=None)
 
     class Meta:
         model = GoodsReceipt
         fields = [
-            'id', 'receipt_number', 'supplier', 'supplier_detail',
-            'invoice_number', 'invoice_date', 'vehicle_number', 'driver_name',
-            'arrival_datetime', 'gross_weight', 'tare_weight', 'net_weight',
+            'id', 'receipt_number', 'gate_entry_number', 'supplier', 'supplier_detail',
+            'invoice_number', 'invoice_date', 'vehicle_number', 'driver_name', 'driver_mobile',
+            'transporter_name', 'lr_number', 'eway_bill_number',
+            'arrival_datetime', 'gate_out_at', 'gross_weight', 'tare_weight', 'net_weight',
             'weight_unit', 'weight_unit_symbol', 'weighing_method', 'weighbridge_reference',
+            'gross_weighed_at', 'tare_weighed_at',
             'purchase_order_number', 'delivery_challan_number',
             'status', 'status_display', 'gate_notes',
             'gate_registered_at', 'unloading_started_at',
             'unloading_completed_at', 'stored_at', 'closed_at',
             'invoice_lines', 'documents', 'allowed_transitions',
-            'duplicate_warning', 'weight_discrepancy',
+            'duplicate_warning', 'weight_discrepancy', 'invoice_weight_kg',
             'created_by', 'created_by_name', 'created_at', 'updated_at',
         ]
         read_only_fields = [
-            'id', 'receipt_number', 'net_weight', 'status', 'gate_registered_at',
+            'id', 'receipt_number', 'gate_entry_number', 'gate_out_at', 'gross_weighed_at', 'tare_weighed_at',
+            'net_weight', 'status', 'gate_registered_at',
             'unloading_started_at', 'unloading_completed_at',
             'stored_at', 'closed_at', 'created_by', 'created_at', 'updated_at',
         ]
@@ -151,6 +189,9 @@ class GoodsReceiptSerializer(serializers.ModelSerializer):
             invoice_date=obj.invoice_date, exclude_pk=obj.pk,
         )
         return list(dupes.values_list('receipt_number', flat=True)[:5])
+
+    def get_invoice_weight_kg(self, obj) -> str | None:
+        return _invoice_weight_kg(obj, self.context)
 
     def get_weight_discrepancy(self, obj) -> dict | None:
         return services.weight_discrepancy(obj)
@@ -239,3 +280,48 @@ class VerificationInputSerializer(serializers.Serializer):
 
 class ReasonSerializer(serializers.Serializer):
     reason = serializers.CharField()
+
+
+class GateLineInputSerializer(serializers.Serializer):
+    id = serializers.UUIDField(required=False)
+    material = serializers.PrimaryKeyRelatedField(queryset=Material.objects.all())
+    material_name_declared = serializers.CharField(max_length=300, required=False, allow_blank=True)
+    declared_quantity = serializers.DecimalField(max_digits=15, decimal_places=4, min_value=Decimal('0.0001'))
+    declared_unit = serializers.PrimaryKeyRelatedField(queryset=UnitOfMeasure.objects.filter(is_active=True))
+    storage_location = serializers.PrimaryKeyRelatedField(
+        queryset=StorageLocation.objects.all(), required=False, allow_null=True)
+    batch_number = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    remarks = serializers.CharField(required=False, allow_blank=True)
+
+
+class GateEntryInputSerializer(serializers.Serializer):
+    """One row of the gate register: truck and invoice, plus one row per material."""
+    supplier = serializers.PrimaryKeyRelatedField(queryset=Supplier.objects.filter(is_active=True))
+    invoice_number = serializers.CharField(max_length=100)
+    invoice_date = serializers.DateField()
+    arrival_datetime = serializers.DateTimeField()
+    vehicle_number = serializers.CharField(max_length=50)
+    transporter_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    lr_number = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    eway_bill_number = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    driver_name = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    driver_mobile = serializers.RegexField(r'^[0-9+\- ]{0,20}$', max_length=20, required=False, allow_blank=True,
+                                           error_messages={'invalid': 'Digits only, e.g. 9876543210.'})
+    gate_notes = serializers.CharField(required=False, allow_blank=True)
+    lines = GateLineInputSerializer(many=True, min_length=1)
+    send = serializers.BooleanField(default=False, help_text='Register and send to receiving now.')
+
+    def validate_vehicle_number(self, value):
+        # One form for every plate (OD02AB1234) so searches match however it was typed.
+        return ''.join(ch for ch in value.upper() if ch.isalnum())
+
+
+class WeighInputSerializer(serializers.Serializer):
+    stage = serializers.ChoiceField(choices=['LOADED', 'EMPTY'])
+    weight = serializers.DecimalField(max_digits=15, decimal_places=4, min_value=Decimal('0.0001'))
+    unit = serializers.PrimaryKeyRelatedField(queryset=UnitOfMeasure.objects.filter(is_active=True))
+    weighbridge_reference = serializers.CharField(max_length=100, required=False, allow_blank=True, default='')
+
+
+class GateOutSerializer(serializers.Serializer):
+    at = serializers.DateTimeField(required=False, allow_null=True)

@@ -28,8 +28,8 @@ from .models import (
     SampleStatus, TestRunStatus, TestResultStatus, DispositionDecision, ACTIVE_SAMPLE_STATUSES,
 )
 
-LAB_ROLES = ('ADMIN', 'LAB_TECH', 'LAB_REVIEWER')
-REVIEWER_ROLES = ('ADMIN', 'LAB_REVIEWER')
+LAB_ROLES = ('ADMIN', 'LAB')
+REVIEWER_ROLES = ('ADMIN', 'LAB')
 # QC statuses from which a package may be (re)sampled. PASSED allows periodic retest.
 SAMPLEABLE_QC = (QCStatus.PENDING_SAMPLING, QCStatus.RETEST_REQUIRED, QCStatus.PASSED)
 
@@ -99,7 +99,7 @@ def default_tests(material, packages):
 
 
 @transaction.atomic
-def create_sample(data, user, *, request=None):
+def create_sample(data, user, *, request=None, simple=False):
     """
     Request a sample covering an explicit set of packages. The covered set is exactly
     what the eventual result applies to — no other packages are ever approved by it.
@@ -136,8 +136,8 @@ def create_sample(data, user, *, request=None):
         raise BusinessRuleViolation('These packages cannot be covered by one sample.', code='invalid_sample_scope',
                                     details={'packages': problems})
 
-    tests = list(data.get('requested_tests') or default_tests(material, packages))
-    if not tests:
+    tests = [] if simple else list(data.get('requested_tests') or default_tests(material, packages))
+    if not tests and not simple:
         raise BusinessRuleViolation(
             f'No tests are configured for {material.code}. Select tests, or mark the material as not requiring QC.',
             code='no_tests')
@@ -153,9 +153,10 @@ def create_sample(data, user, *, request=None):
     SamplePackage.objects.bulk_create([SamplePackage(sample=sample, package=p) for p in packages])
     _audit_sample(user, AuditEvent.ACTION_CREATE, sample, request,
                   after={'packages': [p.package_id for p in packages], 'tests': [t.code for t in tests]})
-    notify_roles(('LAB_TECH',), title=f'Sample {sample.sample_id} awaiting collection',
-                 message=f'{len(packages)} package(s) of {material.code} {sample.batch_number}'.strip(),
-                 entity_type='LabSample', entity_id=sample.id, link_url=f'/lab/samples/{sample.id}', exclude=user)
+    if not simple:
+        notify_roles(('LAB',), title=f'Sample {sample.sample_id} awaiting collection',
+                     message=f'{len(packages)} package(s) of {material.code} {sample.batch_number}'.strip(),
+                     entity_type='LabSample', entity_id=sample.id, link_url=f'/lab/samples/{sample.id}', exclude=user)
     return sample
 
 
@@ -339,12 +340,12 @@ def missing_required_tests(run):
 
 
 @transaction.atomic
-def submit_run(run, user, *, request=None):
+def submit_run(run, user, *, request=None, notify=True, allow_missing=False):
     _require_role(user, LAB_ROLES, 'submit results')
     run = LabTestRun.objects.select_for_update(of=('self',)).select_related('sample').get(pk=run.pk)
     if run.status != TestRunStatus.OPEN or not run.is_current:
         raise BusinessRuleViolation('Only the current open run can be submitted.')
-    missing = missing_required_tests(run)
+    missing = [] if allow_missing else missing_required_tests(run)
     if missing:
         raise BusinessRuleViolation('Required results are missing.', code='results_incomplete',
                                     details={'missing_tests': [t.code for t in missing]})
@@ -360,9 +361,10 @@ def submit_run(run, user, *, request=None):
     outcome = run_outcome(run)
     _audit_sample(user, AuditEvent.ACTION_TRANSITION, sample, request, after={'status': sample.status},
                   extra={'run': run.run_number, 'outcome': outcome})
-    notify_roles(('LAB_REVIEWER',), title=f'Results awaiting review: {sample.sample_id}',
-                 message=f'Run {run.run_number} outcome: {outcome}', level='WARNING' if outcome != 'PASS' else 'INFO',
-                 entity_type='LabSample', entity_id=sample.id, link_url=f'/lab/samples/{sample.id}', exclude=user)
+    if notify:
+        notify_roles(('LAB',), title=f'Results awaiting review: {sample.sample_id}',
+                     message=f'Run {run.run_number} outcome: {outcome}', level='WARNING' if outcome != 'PASS' else 'INFO',
+                     entity_type='LabSample', entity_id=sample.id, link_url=f'/lab/samples/{sample.id}', exclude=user)
     return run
 
 
@@ -382,7 +384,7 @@ def run_outcome(run):
 # ---------------------------------------------------------------------------
 
 @transaction.atomic
-def decide(sample, data, user, *, request=None):
+def decide(sample, data, user, *, request=None, overall_result=False):
     """
     Record the quality disposition for a sample with submitted results.
     The backend QC status set here is authoritative for release.
@@ -410,7 +412,9 @@ def decide(sample, data, user, *, request=None):
             blocking |= Q(result_status=TestResultStatus.FAIL)
         failing = list(run.results.exclude(result_status=TestResultStatus.PASS).filter(blocking)
                        .values_list('test_definition__code', 'result_status'))
-        if failing or missing_required_tests(run):
+        # A direct Pass from the lab (overall_result) stands for the tests not entered one by one,
+        # but never overrules a required result that was entered and failed.
+        if failing or (missing_required_tests(run) and not overall_result):
             raise BusinessRuleViolation(
                 'Material cannot be released while required results are failing, inconclusive or missing.',
                 code='results_not_passing', details={'results': [f'{c}: {s}' for c, s in failing]})
@@ -499,7 +503,7 @@ def decide(sample, data, user, *, request=None):
                  extra={'sample': str(sample.id), 'sample_id': sample.sample_id, 'run': run.run_number},
                  request=request)
     if decision != DispositionDecision.RELEASED:
-        notify_roles(('WAREHOUSE', 'MANAGER', 'LAB_REVIEWER'),
+        notify_roles(('WAREHOUSE', 'MANAGER', 'LAB'),
                      title=f'{sample.sample_id}: {disposition.get_decision_display()}',
                      message=f'{sample.material.code} {sample.batch_number} — {reason}',
                      level='ERROR' if decision in (DispositionDecision.REJECTED, DispositionDecision.PARTIAL) else 'WARNING',
@@ -607,7 +611,7 @@ def create_hold(data, user, *, request=None):
                      after={flag: True}, extra={'hold': hold.reference}, request=request)
     record_audit(user, AuditEvent.ACTION_CREATE, 'QualityHold', hold.id, reason=reason,
                  after={'type': hold_type, 'packages': [p.package_id for p in packages]}, request=request)
-    notify_roles(('WAREHOUSE', 'MANAGER', 'LAB_REVIEWER'), title=f'{hold.get_hold_type_display()} {hold.reference}',
+    notify_roles(('WAREHOUSE', 'MANAGER', 'LAB'), title=f'{hold.get_hold_type_display()} {hold.reference}',
                  message=f'{len(packages)} package(s): {reason}', level='ERROR' if hold_type == HoldType.RECALL else 'WARNING',
                  entity_type='QualityHold', entity_id=hold.id, link_url='/holds', exclude=user)
     return hold
@@ -653,3 +657,44 @@ def hold_impact(hold):
                     'quantity': str(l.issued_quantity), 'unit': l.unit.symbol, 'issued_at': l.created_at}
                    for l in issued],
     }
+
+
+# ---------------------------------------------------------------------------
+# Simple lab flow (2026-11-23): take a sample from a bag, test it, record PASS or FAIL.
+# Built on the same records (sample → run → decision) so history and reports stay complete.
+# ---------------------------------------------------------------------------
+
+@transaction.atomic
+def take_samples(packages, user, *, notes='', request=None):
+    """Take one sample from each bag. The bags move to 'In lab test' until the result is recorded."""
+    _require_role(user, LAB_ROLES, 'take samples')
+    if not packages:
+        raise BusinessRuleViolation('Choose at least one bag.', details={'packages': ['Required.']})
+    samples = []
+    for pkg in packages:
+        sample = create_sample({'packages': [pkg], 'notes': notes}, user, request=request, simple=True)
+        collect_sample(sample, {}, user, request=request)
+        start_testing(sample, user, request=request)
+        samples.append(LabSample.objects.get(pk=sample.pk))
+    return samples
+
+
+@transaction.atomic
+def record_pass_fail(sample, user, *, passed, remarks='', new_expiry_date=None, new_retest_date=None, request=None):
+    """
+    The lab's result for a sample: PASS releases the bag for issue to the factory; FAIL blocks it
+    (it stays in quarantine). An expired bag can only pass with a new expiry date.
+    """
+    _require_role(user, LAB_ROLES, 'record lab results')
+    sample = _lock_sample(sample)
+    if sample.status != SampleStatus.TESTING:
+        raise BusinessRuleViolation(f'Sample {sample.sample_id} is {sample.get_status_display()}; take a sample first.',
+                                    code='not_testing')
+    run = LabTestRun.objects.get(sample=sample, is_current=True)
+    if run.status == TestRunStatus.OPEN:
+        submit_run(run, user, request=request, notify=False, allow_missing=True)
+    reason = remarks.strip() or ('Lab test passed' if passed else 'Lab test failed')
+    return decide(sample, {
+        'decision': DispositionDecision.RELEASED if passed else DispositionDecision.REJECTED,
+        'reason': reason, 'new_expiry_date': new_expiry_date, 'new_retest_date': new_retest_date,
+    }, user, request=request, overall_result=True)

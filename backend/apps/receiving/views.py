@@ -25,6 +25,7 @@ from .serializers import (
     InvoiceLineSerializer, ReceiptDocumentSerializer, ReceiptDocumentUploadSerializer,
     ReceiptLineVerificationSerializer, WeightCorrectionSerializer,
     TransitionSerializer, AuditEventSerializer, VerificationInputSerializer, ReasonSerializer,
+    GateEntryInputSerializer, WeighInputSerializer, GateOutSerializer,
 )
 from apps.core.idempotency import run_idempotent, key_from_request
 from apps.inventory import services as inventory_services
@@ -37,12 +38,13 @@ from apps.core.permissions import role_permission
 
 # Invoices and supplier documents are restricted; factory requesters do not see them.
 ReceiptReaders = role_permission(
-    'ADMIN', 'GATE', 'RECEIVING', 'WAREHOUSE', 'LAB_TECH', 'LAB_REVIEWER', 'AUDITOR', 'MANAGER',
+    'ADMIN', 'GATE', 'RECEIVING', 'WAREHOUSE', 'LAB', 'AUDITOR', 'MANAGER',
 )
 GateWriters = role_permission('ADMIN', 'GATE')
 LineWriters = role_permission('ADMIN', 'GATE', 'RECEIVING')
 DocumentWriters = role_permission('ADMIN', 'GATE', 'RECEIVING')
-WeightCorrectors = role_permission('ADMIN', 'GATE')
+# Business rule (2026-11-23): only an admin or a manager may edit a recorded weighbridge reading.
+WeightCorrectors = role_permission('ADMIN', 'MANAGER')
 Unloaders = role_permission('ADMIN', 'RECEIVING', 'WAREHOUSE')
 
 ACK_PARAM = OpenApiParameter(
@@ -82,18 +84,21 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
     http_method_names = ['get', 'post', 'put', 'patch', 'head', 'options']
     filterset_class = GoodsReceiptFilter
     search_fields = [
-        'receipt_number', 'invoice_number', 'vehicle_number', 'supplier__name', 'supplier__code',
-        'purchase_order_number', 'delivery_challan_number',
+        'receipt_number', 'gate_entry_number', 'invoice_number', 'vehicle_number', 'supplier__name', 'supplier__code',
+        'purchase_order_number', 'delivery_challan_number', 'transporter_name', 'lr_number', 'eway_bill_number',
+        'driver_mobile',
         'invoice_lines__material_name_declared', 'invoice_lines__material__code', 'invoice_lines__batch_number',
     ]
-    ordering_fields = ['arrival_datetime', 'created_at', 'receipt_number', 'invoice_date']
+    ordering_fields = ['arrival_datetime', 'created_at', 'receipt_number', 'gate_entry_number', 'invoice_date']
     ordering = ['-created_at']
 
     def get_queryset(self):
         qs = GoodsReceipt.objects.select_related('supplier', 'weight_unit', 'created_by')
         if self.action == 'list':
-            return qs.annotate(line_count=Count('invoice_lines', distinct=True))
-        return qs.prefetch_related('invoice_lines__material', 'invoice_lines__declared_unit', 'documents__uploaded_by')
+            return qs.annotate(line_count=Count('invoice_lines', distinct=True)).prefetch_related(
+                'invoice_lines__declared_unit', 'invoice_lines__declared_weight_unit', 'invoice_lines__storage_location')
+        return qs.prefetch_related('invoice_lines__material', 'invoice_lines__declared_unit',
+                                   'invoice_lines__declared_weight_unit', 'documents__uploaded_by')
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -106,8 +111,10 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in self.ACTION_SCOPED_PERMISSIONS:
             return super().get_permissions()
-        if self.action in ('create', 'update', 'partial_update'):
+        if self.action in ('create', 'update', 'partial_update', 'gate_entry', 'edit_gate_entry', 'gate_out'):
             return [GateWriters()]
+        if self.action == 'weigh':
+            return [Unloaders()]
         return [ReceiptReaders()]
 
     def _ack(self, request):
@@ -147,6 +154,55 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
         data = dict(serializer.validated_data)
         reason = data.pop('reason')
         receipt = services.correct_weights(receipt, data, request.user, reason=reason, request=request)
+        return Response(self._detail(receipt))
+
+    @extend_schema(tags=['receiving'], request=GateEntryInputSerializer, responses=GoodsReceiptSerializer,
+                   parameters=[ACK_PARAM])
+    @action(detail=False, methods=['post'], url_path='gate-entry')
+    def gate_entry(self, request):
+        """Create a gate register entry (truck, invoice and materials) in one step; `send` hands it to receiving."""
+        s = GateEntryInputSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        data = dict(s.validated_data)
+        send = data.pop('send')
+        receipt = services.save_gate_entry(None, data, request.user, send=send,
+                                           acknowledge_duplicate=self._ack(request), request=request)
+        return Response(self._detail(receipt), status=status.HTTP_201_CREATED)
+
+    @extend_schema(tags=['receiving'], request=GateEntryInputSerializer, responses=GoodsReceiptSerializer,
+                   parameters=[ACK_PARAM])
+    @action(detail=True, methods=['put'], url_path='gate-entry')
+    def edit_gate_entry(self, request, pk=None):
+        """Edit a draft gate entry (header and materials together)."""
+        receipt = self.get_object()
+        s = GateEntryInputSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        data = dict(s.validated_data)
+        send = data.pop('send')
+        receipt = services.save_gate_entry(receipt, data, request.user, send=send,
+                                           acknowledge_duplicate=self._ack(request), request=request)
+        return Response(self._detail(receipt))
+
+    @extend_schema(tags=['receiving'], request=WeighInputSerializer, responses=GoodsReceiptSerializer)
+    @action(detail=True, methods=['post'], url_path='weigh')
+    def weigh(self, request, pk=None):
+        """Weighbridge reading at receiving: LOADED truck before unloading, EMPTY truck after."""
+        receipt = self.get_object()
+        s = WeighInputSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        d = s.validated_data
+        receipt = services.record_weight(receipt, stage=d['stage'], weight=d['weight'], unit=d['unit'], user=request.user,
+                                         reference=d['weighbridge_reference'], request=request)
+        return Response(self._detail(receipt))
+
+    @extend_schema(tags=['receiving'], request=GateOutSerializer, responses=GoodsReceiptSerializer)
+    @action(detail=True, methods=['post'], url_path='gate-out')
+    def gate_out(self, request, pk=None):
+        """The truck leaves the site (gate out time)."""
+        receipt = self.get_object()
+        s = GateOutSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        receipt = services.record_gate_out(receipt, request.user, at=s.validated_data.get('at'), request=request)
         return Response(self._detail(receipt))
 
     def _transition(self, request, name):
@@ -250,16 +306,18 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
             invoice_line__receipt=OuterRef('pk'), verification_status=VerificationStatus.DISCREPANT,
         )
         weight_alerts = [
-            r.receipt_number for r in open_qs.filter(net_weight__isnull=False).prefetch_related('invoice_lines')
+            r.receipt_number for r in open_qs.filter(net_weight__isnull=False).select_related('weight_unit').prefetch_related('invoice_lines__declared_unit', 'invoice_lines__declared_weight_unit')
             if (d := services.weight_discrepancy(r)) and d['exceeds_tolerance']
         ]
         return Response({
             'today_receipts': qs.filter(arrival_datetime__date=today).count(),
             'week_receipts': qs.filter(arrival_datetime__date__gte=week_start).count(),
             'by_status': {s: by_status.get(s, 0) for s in ReceiptStatus.values},
-            'trucks_on_site': open_qs.filter(status__in=[
-                ReceiptStatus.GATE_REGISTERED, ReceiptStatus.AWAITING_UNLOADING, ReceiptStatus.UNLOADING_IN_PROGRESS,
-            ]).count(),
+            'trucks_on_site': qs.filter(gate_out_at__isnull=True).exclude(
+                status__in=[ReceiptStatus.DRAFT, ReceiptStatus.CANCELLED, ReceiptStatus.CLOSED]).count(),
+            'waiting_to_weigh': open_qs.filter(status=ReceiptStatus.AWAITING_UNLOADING, gross_weight__isnull=True).count(),
+            'ready_to_leave': qs.filter(gate_out_at__isnull=True, tare_weight__isnull=False)
+                .exclude(status=ReceiptStatus.CANCELLED).count(),
             'awaiting_line_entry': open_qs.filter(
                 status__in=[ReceiptStatus.DRAFT, ReceiptStatus.GATE_REGISTERED],
             ).filter(invoice_lines__isnull=True).count(),
