@@ -79,6 +79,7 @@ class GoodsReceipt(UUIDModel, AuditedModel):
     vehicle_number = models.CharField(max_length=50, db_index=True)
     driver_name = models.CharField(max_length=100, blank=True)
     driver_mobile = models.CharField(max_length=20, blank=True)
+    driver_licence_number = models.CharField('DL no.', max_length=30, blank=True, db_index=True)
     transporter_name = models.CharField(max_length=200, blank=True)
     lr_number = models.CharField('LR number', max_length=100, blank=True, db_index=True)
     eway_bill_number = models.CharField('e-way bill number', max_length=100, blank=True, db_index=True)

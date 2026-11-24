@@ -7799,6 +7799,9 @@ components:
         driver_name:
           type: string
           maxLength: 100
+        driver_licence_number:
+          type: string
+          maxLength: 30
         driver_mobile:
           type: string
           maxLength: 20
@@ -7909,6 +7912,10 @@ components:
         driver_mobile:
           type: string
           maxLength: 20
+        driver_licence_number:
+          type: string
+          title: DL no.
+          maxLength: 30
         transporter_name:
           type: string
           maxLength: 200
@@ -8206,6 +8213,10 @@ components:
         driver_mobile:
           type: string
           maxLength: 20
+        driver_licence_number:
+          type: string
+          title: DL no.
+          maxLength: 30
         transporter_name:
           type: string
           maxLength: 200
@@ -11262,6 +11273,10 @@ components:
         driver_mobile:
           type: string
           maxLength: 20
+        driver_licence_number:
+          type: string
+          title: DL no.
+          maxLength: 30
         transporter_name:
           type: string
           maxLength: 200

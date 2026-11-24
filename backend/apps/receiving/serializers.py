@@ -156,7 +156,7 @@ class GoodsReceiptSerializer(serializers.ModelSerializer):
         model = GoodsReceipt
         fields = [
             'id', 'receipt_number', 'gate_entry_number', 'supplier', 'supplier_detail',
-            'invoice_number', 'invoice_date', 'vehicle_number', 'driver_name', 'driver_mobile',
+            'invoice_number', 'invoice_date', 'vehicle_number', 'driver_name', 'driver_mobile', 'driver_licence_number',
             'transporter_name', 'lr_number', 'eway_bill_number',
             'arrival_datetime', 'gate_out_at', 'gross_weight', 'tare_weight', 'net_weight',
             'weight_unit', 'weight_unit_symbol', 'weighing_method', 'weighbridge_reference',
@@ -305,11 +305,16 @@ class GateEntryInputSerializer(serializers.Serializer):
     lr_number = serializers.CharField(max_length=100, required=False, allow_blank=True)
     eway_bill_number = serializers.CharField(max_length=100, required=False, allow_blank=True)
     driver_name = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    driver_licence_number = serializers.CharField(max_length=30, required=False, allow_blank=True)
     driver_mobile = serializers.RegexField(r'^[0-9+\- ]{0,20}$', max_length=20, required=False, allow_blank=True,
                                            error_messages={'invalid': 'Digits only, e.g. 9876543210.'})
     gate_notes = serializers.CharField(required=False, allow_blank=True)
     lines = GateLineInputSerializer(many=True, min_length=1)
     send = serializers.BooleanField(default=False, help_text='Register and send to receiving now.')
+
+    def validate_driver_licence_number(self, value):
+        # One form for every licence number (OD0220150012345) so searches match however it was typed.
+        return ''.join(ch for ch in value.upper() if ch.isalnum())
 
     def validate_vehicle_number(self, value):
         # One form for every plate (OD02AB1234) so searches match however it was typed.

@@ -26,7 +26,7 @@ class GateRegisterTests(TestCase):
             'supplier': self.fx.supplier.pk, 'invoice_number': 'INV-77', 'invoice_date': '2026-11-20',
             'arrival_datetime': timezone.now().isoformat(), 'vehicle_number': 'od 02  ab 1234',
             'transporter_name': 'Kalinga Roadlines', 'lr_number': 'LR-5521', 'eway_bill_number': '321009876543',
-            'driver_mobile': '9876543210',
+            'driver_mobile': '9876543210', 'driver_licence_number': 'od02 20150012345',
             'lines': [
                 {'material': self.fx.material.pk, 'declared_quantity': '1', 'declared_unit': self.fx.tonne.pk,
                  'storage_location': self.fx.shelf1.pk},
@@ -51,6 +51,8 @@ class GateRegisterTests(TestCase):
         self.assertEqual(r['status'], 'AWAITING_UNLOADING')
         self.assertRegex(r['gate_entry_number'], r'^GE-\d{4}-00001$')
         self.assertEqual(r['vehicle_number'], 'OD02AB1234')
+        self.assertEqual(r['driver_licence_number'], 'OD0220150012345')
+        self.assertEqual(self.gate.get(f'{URL}/', {'search': '20150012345'}).json()['count'], 1)
         self.assertEqual((r['transporter_name'], r['lr_number'], r['eway_bill_number']),
                          ('Kalinga Roadlines', 'LR-5521', '321009876543'))
         self.assertEqual([line['storage_location_code'] for line in r['invoice_lines']], ['A-1', None])

@@ -86,7 +86,7 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
     search_fields = [
         'receipt_number', 'gate_entry_number', 'invoice_number', 'vehicle_number', 'supplier__name', 'supplier__code',
         'purchase_order_number', 'delivery_challan_number', 'transporter_name', 'lr_number', 'eway_bill_number',
-        'driver_mobile',
+        'driver_mobile', 'driver_licence_number',
         'invoice_lines__material_name_declared', 'invoice_lines__material__code', 'invoice_lines__batch_number',
     ]
     ordering_fields = ['arrival_datetime', 'created_at', 'receipt_number', 'gate_entry_number', 'invoice_date']
