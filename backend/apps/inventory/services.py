@@ -405,6 +405,29 @@ def putaway_package(pkg, location, user, *, notes='', request=None):
 
 
 @transaction.atomic
+def putaway_packages(packages, location, user, *, notes='', request=None):
+    """
+    Put several bags away in one location in one step. All or nothing: if any bag cannot go there
+    (label not printed, waiting for the lab but the location is not quarantine, …) nothing is stored
+    and every problem is listed.
+    """
+    if not packages:
+        raise BusinessRuleViolation('Choose at least one bag.', details={'packages': ['Required.']})
+    problems, stored = [], []
+    for pkg in packages:
+        try:
+            with transaction.atomic():
+                stored.append(putaway_package(pkg, location, user, notes=notes, request=request))
+        except BusinessRuleViolation as exc:
+            problems.append(f'{pkg.package_id}: {exc.message}')
+    if problems:
+        transaction.set_rollback(True)
+        raise BusinessRuleViolation(f'Nothing was put away — {len(problems)} bag(s) cannot go to this location.',
+                                    code='putaway_refused', details={'packages': problems})
+    return stored
+
+
+@transaction.atomic
 def transfer_package(pkg, to_location, user, *, notes='', request=None):
     pkg = _lock(pkg)
     if pkg.status != PackageStatus.STORED:

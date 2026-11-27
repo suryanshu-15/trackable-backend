@@ -27,7 +27,7 @@ from .models import (
 )
 from .serializers import (
     PackageSerializer, PackageListSerializer, InventoryMovementSerializer,
-    LabelPrintSerializer, LabelDataSerializer, LocationMoveSerializer, SplitSerializer,
+    LabelPrintSerializer, LabelDataSerializer, LocationMoveSerializer, SplitSerializer, BulkPutawaySerializer,
     TimelineEventSerializer, StockAdjustmentSerializer, StockAdjustmentInputSerializer, DecisionNotesSerializer,
     MaterialRequestSerializer, MaterialRequestInputSerializer,
     MaterialIssueSerializer, MaterialIssueInputSerializer,
@@ -139,6 +139,17 @@ class PackageViewSet(viewsets.ReadOnlyModelViewSet):
         pkg = services.putaway_package(self.get_object(), s.validated_data['location'], request.user,
                                        notes=s.validated_data['notes'], request=request)
         return Response(self._detail(pkg))
+
+    @extend_schema(tags=['inventory'], request=BulkPutawaySerializer, responses=PackageListSerializer(many=True))
+    @action(detail=False, methods=['post'], url_path='bulk-putaway', permission_classes=[Handlers])
+    def bulk_putaway(self, request):
+        """Put several bags away in one location at once (all or nothing)."""
+        s = BulkPutawaySerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        stored = services.putaway_packages(s.validated_data['packages'], s.validated_data['location'], request.user,
+                                           notes=s.validated_data['notes'], request=request)
+        qs = self.get_queryset().filter(pk__in=[p.pk for p in stored])
+        return Response(PackageListSerializer(qs, many=True, context=self.get_serializer_context()).data)
 
     @extend_schema(tags=['inventory'], request=LocationMoveSerializer, responses=PackageSerializer)
     @action(detail=True, methods=['post'], url_path='transfer', permission_classes=[WarehouseOps])

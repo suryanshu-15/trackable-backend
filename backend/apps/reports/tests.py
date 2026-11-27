@@ -152,6 +152,14 @@ class ManagementDashboardTests(DemoDataTestCase):
         self.assertEqual(d['issues']['issues'], MaterialIssue.objects.count())
         self.assertEqual(d['quality']['decisions'], {'RELEASED': 4})
         self.assertEqual(d['quality']['test_pass_rate_percent'], 100.0)
+        # The rate follows the lab's Pass / Fail decisions: one more failed bag lowers it.
+        from apps.laboratory.models import QualityDisposition
+        before = QualityDisposition.objects.filter(decision='RELEASED').count()
+        d0 = QualityDisposition.objects.first()
+        QualityDisposition.objects.create(sample=d0.sample, test_run=d0.test_run, decision='REJECTED', decided_by=d0.decided_by,
+                                          decided_at=d0.decided_at, reason='test')
+        rate = self.as_('MANAGER').get(f'{R}/management-dashboard/').json()['quality']['test_pass_rate_percent']
+        self.assertEqual(rate, round(before / (before + 1) * 100, 1))
         self.assertIsNotNone(d['flow']['avg_gate_to_putaway_hours'])
         self.assertEqual(d['reconciliation']['ledger_mismatches'], 0)
 

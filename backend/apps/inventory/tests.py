@@ -544,3 +544,38 @@ class PackageTimelineTests(TestCase):
             self.assertIn(kind, kinds)
         timestamps = [e['timestamp'] for e in events]
         self.assertEqual(timestamps, sorted(timestamps))
+
+
+class BulkPutawayTests(TestCase):
+    """2026-11-27: put several bags away in one location at once."""
+
+    def setUp(self):
+        self.fx = Fixtures()
+        self.wh = client_for(self.fx.users['WAREHOUSE'])
+        _, self.pkgs = self.fx.packaged_receipt(count=3, each='100')
+
+    def bulk(self, pkgs, location, client=None):
+        return (client or self.wh).post(f'{PKG}/bulk-putaway/', {'packages': [str(p.pk) for p in pkgs], 'location': location.pk},
+                                        format='json')
+
+    def test_all_bags_go_to_one_location(self):
+        resp = self.bulk(self.pkgs, self.fx.quarantine)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(len(resp.json()), 3)
+        self.assertEqual({(p.status, p.current_location_id) for p in Package.objects.filter(pk__in=[x.pk for x in self.pkgs])},
+                         {('STORED', self.fx.quarantine.pk)})
+
+    def test_all_or_nothing_with_every_problem_listed(self):
+        # Waiting for the lab: a normal shelf is refused for every bag, and nothing is stored.
+        resp = self.bulk(self.pkgs, self.fx.shelf1)
+        self.assertEqual((resp.status_code, resp.json()['error']), (400, 'putaway_refused'))
+        self.assertEqual(len(resp.json()['details']['packages']), 3)
+        self.assertFalse(Package.objects.filter(pk__in=[p.pk for p in self.pkgs], status='STORED').exists())
+        # One bag already stored: the whole batch is refused, the others stay untouched.
+        self.bulk(self.pkgs[:1], self.fx.quarantine)
+        resp = self.bulk(self.pkgs, self.fx.quarantine)
+        self.assertEqual(resp.json()['details']['packages'], [resp.json()['details']['packages'][0]])
+        self.assertEqual(Package.objects.filter(pk__in=[p.pk for p in self.pkgs], status='STORED').count(), 1)
+
+    def test_role(self):
+        self.assertEqual(self.bulk(self.pkgs, self.fx.quarantine, client=client_for(self.fx.users['FACTORY'])).status_code, 403)

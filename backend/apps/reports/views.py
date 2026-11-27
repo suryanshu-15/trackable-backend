@@ -129,6 +129,15 @@ class ReportView(APIView):
         return response
 
 
+def _pass_rate(since):
+    """Percent of the lab's Pass / Fail decisions in the period that were Pass (None when there were none)."""
+    from apps.laboratory.models import QualityDisposition
+    counts = dict(QualityDisposition.objects.filter(decided_at__gte=since, decision__in=['RELEASED', 'REJECTED'])
+                  .values_list('decision').annotate(c=Count('id')))
+    total = counts.get('RELEASED', 0) + counts.get('REJECTED', 0)
+    return round(counts.get('RELEASED', 0) / total * 100, 1) if total else None
+
+
 def _hours(td):
     return round(td.total_seconds() / 3600, 1) if td else None
 
@@ -148,7 +157,6 @@ class ManagementDashboardView(APIView):
         lines = InvoiceLine.objects.filter(receipt__in=receipts)
         results = LabTestResult.objects.filter(entered_at__gte=since, test_run__is_current=True)
         result_counts = dict(results.values_list('result_status').annotate(c=Count('id')))
-        decided = sum(result_counts.values())
         issue_lines = MaterialIssueLine.objects.filter(issue__issue_datetime__gte=since)
         in_wh = Package.objects.in_warehouse()
 
@@ -168,7 +176,8 @@ class ManagementDashboardView(APIView):
                 'decisions': dict(QualityDisposition.objects.filter(decided_at__gte=since)
                                   .values_list('decision').annotate(c=Count('id'))),
                 'test_results': result_counts,
-                'test_pass_rate_percent': round(result_counts.get('PASS', 0) / decided * 100, 1) if decided else None,
+                # Share of lab results that passed: released vs rejected bags (the lab records Pass / Fail).
+                'test_pass_rate_percent': _pass_rate(since),
                 'avg_lab_turnaround_hours': _hours(LabSample.objects.filter(completed_at__gte=since).aggregate(
                     a=Avg(F('completed_at') - F('created_at')))['a']),
                 'avg_testing_hours': _hours(LabTestRun.objects.filter(submitted_at__gte=since).aggregate(

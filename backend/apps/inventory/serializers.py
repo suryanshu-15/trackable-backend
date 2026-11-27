@@ -31,6 +31,8 @@ class PackageListSerializer(serializers.ModelSerializer):
     location_code = serializers.CharField(source='current_location.code', read_only=True, default=None)
     location_is_quarantine = serializers.BooleanField(source='current_location.is_quarantine', read_only=True, default=None)
     receipt_number = serializers.CharField(source='invoice_line.receipt.receipt_number', read_only=True)
+    gate_entry_number = serializers.CharField(source='invoice_line.receipt.gate_entry_number', read_only=True, default=None)
+    planned_location = serializers.IntegerField(source='invoice_line.storage_location_id', read_only=True, default=None)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     qc_status_display = serializers.CharField(source='get_qc_status_display', read_only=True)
     is_available = serializers.BooleanField(read_only=True)
@@ -39,7 +41,7 @@ class PackageListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Package
         fields = [
-            'id', 'package_id', 'material', 'material_code', 'material_name',
+            'id', 'package_id', 'material', 'material_code', 'material_name', 'gate_entry_number', 'planned_location',
             'original_quantity', 'current_quantity', 'unit_symbol',
             'status', 'status_display', 'qc_status', 'qc_status_display',
             'is_on_hold', 'is_recalled', 'is_available', 'requires_quarantine',
@@ -183,6 +185,12 @@ class LabelPrintSerializer(serializers.Serializer):
 
 
 class LocationMoveSerializer(serializers.Serializer):
+    location = serializers.PrimaryKeyRelatedField(queryset=StorageLocation.objects.all())
+    notes = serializers.CharField(required=False, allow_blank=True, default='')
+
+
+class BulkPutawaySerializer(serializers.Serializer):
+    packages = serializers.PrimaryKeyRelatedField(queryset=Package.objects.all(), many=True)
     location = serializers.PrimaryKeyRelatedField(queryset=StorageLocation.objects.all())
     notes = serializers.CharField(required=False, allow_blank=True, default='')
 

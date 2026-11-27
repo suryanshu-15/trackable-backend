@@ -1949,6 +1949,164 @@ paths:
               schema:
                 $ref: '#/components/schemas/Package'
           description: ''
+  /api/v1/inventory/packages/bulk-putaway/:
+    post:
+      operationId: inventory_packages_bulk_putaway_create
+      description: Put several bags away in one location at once (all or nothing).
+      parameters:
+      - in: query
+        name: available
+        schema:
+          type: boolean
+      - in: query
+        name: batch_number
+        schema:
+          type: string
+      - in: query
+        name: current_location
+        schema:
+          type: integer
+      - in: query
+        name: expiring_before
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: in_warehouse
+        schema:
+          type: boolean
+      - in: query
+        name: invoice_line
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: is_on_hold
+        schema:
+          type: boolean
+      - in: query
+        name: is_recalled
+        schema:
+          type: boolean
+      - in: query
+        name: material
+        schema:
+          type: integer
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: parent_package
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: qc_status
+        schema:
+          type: array
+          items:
+            type: string
+            enum:
+            - FAILED
+            - NOT_REQUIRED
+            - ON_HOLD
+            - PASSED
+            - PENDING_SAMPLING
+            - RETEST_REQUIRED
+            - SAMPLED
+            - TESTING
+        description: |-
+          * `NOT_REQUIRED` - QC Not Required
+          * `PENDING_SAMPLING` - Pending Sampling
+          * `SAMPLED` - Sampled
+          * `TESTING` - Testing
+          * `PASSED` - Passed
+          * `FAILED` - Failed
+          * `ON_HOLD` - On Hold
+          * `RETEST_REQUIRED` - Retest Required
+        explode: true
+        style: form
+      - in: query
+        name: receipt
+        schema:
+          type: string
+          format: uuid
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: status
+        schema:
+          type: array
+          items:
+            type: string
+            enum:
+            - AWAITING_PUTAWAY
+            - CREATED
+            - DISPOSED
+            - ISSUED
+            - REPACKED
+            - STORED
+            - SUPPLIER_RETURNED
+        description: |-
+          * `CREATED` - Created (label not printed)
+          * `AWAITING_PUTAWAY` - Awaiting Put-away
+          * `STORED` - Stored
+          * `ISSUED` - Fully Issued
+          * `REPACKED` - Repacked into child packages
+          * `DISPOSED` - Disposed
+          * `SUPPLIER_RETURNED` - Returned to Supplier
+        explode: true
+        style: form
+      - in: query
+        name: supplier
+        schema:
+          type: integer
+      - in: query
+        name: warehouse
+        schema:
+          type: integer
+      tags:
+      - inventory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkPutawayRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BulkPutawayRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BulkPutawayRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPackageListList'
+          description: ''
   /api/v1/inventory/packages/resolve/:
     get:
       operationId: inventory_packages_resolve_retrieve
@@ -7297,6 +7455,22 @@ components:
       - id
       - reason
       - timestamp
+    BulkPutawayRequest:
+      type: object
+      properties:
+        packages:
+          type: array
+          items:
+            type: string
+            format: uuid
+        location:
+          type: integer
+        notes:
+          type: string
+          default: ''
+      required:
+      - location
+      - packages
     ChangePasswordRequest:
       type: object
       properties:
@@ -10449,6 +10623,12 @@ components:
         material_name:
           type: string
           readOnly: true
+        gate_entry_number:
+          type: string
+          readOnly: true
+        planned_location:
+          type: integer
+          readOnly: true
         original_quantity:
           type: string
           format: decimal
@@ -10537,6 +10717,7 @@ components:
       - current_location
       - current_quantity
       - expiry_date
+      - gate_entry_number
       - id
       - is_available
       - is_on_hold
@@ -10550,6 +10731,7 @@ components:
       - original_quantity
       - package_id
       - parent_package
+      - planned_location
       - qc_status
       - qc_status_display
       - receipt_number
